@@ -7,12 +7,12 @@ import { Copy, Users, CheckCheck } from "lucide-react";
 import { useState } from "react";
 
 export function ReferralCard() {
-    const { address } = useWallet();
+    const { address, user } = useWallet();
     const [copied, setCopied] = useState(false);
 
     // Generate mock referral link from address
     const referralLink = address
-        ? `https://trk.game/ref/${address.slice(0, 6)}`
+        ? `https://trk.game/?ref=${user?.referralCode || address.slice(2, 8).toUpperCase()}`
         : "Loading...";
 
     const handleCopy = () => {

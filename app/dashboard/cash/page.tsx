@@ -20,7 +20,7 @@ function CashDashboardContent() {
         realBalances, usdtBalance, nativeBalance,
         unclaimedRounds, claimWin, claimLoss, refetchUnclaimed, faucet,
         isConnected, isLoading, user, deposits, gameHistory, isRegisteredOnChain, purchaseMembership,
-        address, connect, recentWallets, switchWallet, isSwitchingWallet
+        address, connect, recentWallets, switchWallet, isSwitchingWallet, deposit
     } = useWallet();
     const router = useRouter();
     const [isRewardRedeemOpen, setIsRewardRedeemOpen] = useState(false);
@@ -72,12 +72,16 @@ function CashDashboardContent() {
         }
     }, [searchParams]);
 
-    const handleMembership = () => {
+    const handleDeposit = () => {
         setIsDepositOpen(true);
     };
 
-    const executeMembership = async (amount: number) => {
-        await purchaseMembership(amount);
+    const handleMembership = () => {
+        router.push("/membership");
+    };
+
+    const executeDeposit = async (amount: number) => {
+        await deposit(amount);
     };
 
     return (
@@ -246,12 +250,18 @@ function CashDashboardContent() {
                                 </div>
                             </div>
 
-                            <div className="flex flex-col gap-4 w-full md:w-auto min-w-[200px]">
+                            <div className="flex flex-col gap-3 w-full md:w-auto min-w-[200px]">
                                 <Button
-                                    onClick={handleMembership}
+                                    onClick={handleDeposit}
                                     className="w-full h-12 bg-emerald-500 hover:bg-emerald-400 text-black border border-emerald-500/20 font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:scale-105 active:scale-95"
                                 >
-                                    GET_MEMBERSHIP
+                                    DEPOSIT_USDT
+                                </Button>
+                                <Button
+                                    onClick={handleMembership}
+                                    className="w-full h-12 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                                >
+                                    BUY_MEMBERSHIP
                                 </Button>
                                 <Button
                                     onClick={() => setIsRewardRedeemOpen(true)}
@@ -346,7 +356,7 @@ function CashDashboardContent() {
                             {isSwitchingWallet && (
                                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-400">
                                     <Repeat className="h-3 w-3 animate-spin" />
-                                    Switching in progress — confirm the account inside your wallet.
+                                    Switching in progress - confirm the account inside your wallet.
                                 </div>
                             )}
                         </CardContent>
@@ -538,7 +548,7 @@ function CashDashboardContent() {
                     <MembershipModal
                         isOpen={isDepositOpen}
                         onClose={() => setIsDepositOpen(false)}
-                        onConfirm={executeMembership}
+                        onConfirm={executeDeposit}
                     />
                 )}
                 {isRewardRedeemOpen && (

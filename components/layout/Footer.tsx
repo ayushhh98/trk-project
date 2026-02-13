@@ -16,7 +16,7 @@ import { Logo } from "@/components/ui/Logo";
 
 const footerLinks = {
     ecosystem: [
-        { name: "Live Game", href: "/login" },
+        { name: "Live Game", href: "/auth" },
         { name: "Lucky Draw", href: "/dashboard/lucky-draw" },
         { name: "Club Income", href: "/dashboard/club" },
         { name: "Protection", href: "/dashboard/cashback" },

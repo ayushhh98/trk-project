@@ -31,10 +31,14 @@ const packageMeta: Record<PackageKey, { title: string; accent: string; badge?: s
 
 export default function MembershipPage() {
     const router = useRouter();
-    const { isConnected, isLoading, user, address, purchaseMembership, refreshUser, connect, isWalletConnected } = useWallet();
+    const { isConnected, isLoading, user, address, purchaseMembership, refreshUser, connect, isWalletConnected, nativeBalance, currentChainId } = useWallet();
     const [packages, setPackages] = useState<Record<string, PackageData> | null>(null);
     const [disclaimer, setDisclaimer] = useState("");
     const [buying, setBuying] = useState<string | null>(null);
+    const gasBalance = Number(nativeBalance || 0);
+    const needsGas = isWalletConnected && (!Number.isFinite(gasBalance) || gasBalance <= 0);
+    const isTestnet = currentChainId === 97;
+    const gasFaucetUrl = "https://testnet.binance.org/faucet-smart";
 
     useEffect(() => {
         if (isLoading) return;
@@ -66,6 +70,14 @@ export default function MembershipPage() {
         if (!isWalletConnected) {
             toast.info("Connect your wallet to continue.");
             await connect("Other");
+            return;
+        }
+        if (needsGas) {
+            toast.error("BNB required for gas fees", {
+                description: isTestnet
+                    ? "Get free BNB from the faucet, then retry."
+                    : "Add a small amount of BNB to pay network fees."
+            });
             return;
         }
 
@@ -150,6 +162,31 @@ export default function MembershipPage() {
                 {disclaimer && (
                     <div className="border border-white/10 bg-white/5 backdrop-blur-sm p-4 rounded-2xl text-xs text-white/60">
                         {disclaimer}
+                    </div>
+                )}
+
+                {/* Gas Fee Instructions */}
+                <div className="border border-amber-500/20 bg-amber-500/10 backdrop-blur-sm p-5 rounded-2xl text-xs text-amber-200 space-y-3">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">How To Add BNB Gas (Binance)</div>
+                    <div className="space-y-1.5 text-white/80">
+                        <div>1. Buy a small amount of BNB on Binance.</div>
+                        <div>2. Withdraw to your wallet using BSC (BEP-20) network.</div>
+                        <div>3. Wait for confirmation, then retry the purchase.</div>
+                        <div className="text-[10px] text-white/50">Tip: Send a small test amount first.</div>
+                    </div>
+                </div>
+
+                {/* Gas Notice */}
+                {needsGas && (
+                    <div className="border border-amber-500/20 bg-amber-500/10 p-4 rounded-2xl text-xs text-amber-500 font-bold uppercase tracking-widest flex flex-col md:flex-row items-center justify-between gap-3">
+                        <span>Gas required: add BNB to pay network fees.</span>
+                        {isTestnet && (
+                            <a href={gasFaucetUrl} target="_blank" rel="noreferrer" className="w-full md:w-auto">
+                                <Button className="h-9 px-6 bg-amber-500 text-black hover:bg-amber-400 font-black text-[9px] uppercase tracking-widest w-full md:w-auto">
+                                    Get Free BNB
+                                </Button>
+                            </a>
+                        )}
                     </div>
                 )}
 
@@ -239,7 +276,7 @@ export default function MembershipPage() {
                                         </div>
 
                                         <Button
-                                            disabled={!pkg || !!buying}
+                                            disabled={!pkg || !!buying || needsGas}
                                             onClick={() => handleBuy(key)}
                                             className={cn(
                                                 "w-full h-12 font-black uppercase tracking-widest text-xs transition-all group-hover:scale-105",
@@ -248,13 +285,13 @@ export default function MembershipPage() {
                                                 meta.accent === "purple" && "bg-purple-500 text-black hover:bg-purple-400"
                                             )}
                                         >
-                                            {buying === key ? "Processing..." : "Buy With Wallet"}
+                                            {buying === key ? "Processing..." : needsGas ? "Add BNB Gas" : "Buy With Wallet"}
                                             <ArrowRight className="h-4 w-4 ml-2" />
                                         </Button>
 
                                         {!isWalletConnected && (
                                             <div className="text-[10px] text-white/40 text-center">
-                                                Click “Buy With Wallet” to connect.
+                                                Click "Buy With Wallet" to connect.
                                             </div>
                                         )}
                                     </CardContent>
@@ -276,7 +313,7 @@ export default function MembershipPage() {
                 <div className="flex items-center justify-between border border-white/10 bg-white/5 backdrop-blur-sm p-4 rounded-2xl text-xs text-white/50">
                     <span>No purchase necessary. You can claim daily free credits.</span>
                     <Link href="/free-credits" className="text-white/70 hover:text-white font-bold uppercase tracking-wider transition-colors">
-                        Go to Free Credits →
+                        Go to Free Credits &rarr;
                     </Link>
                 </div>
             </main>

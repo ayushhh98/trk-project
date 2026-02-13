@@ -1,5 +1,6 @@
 "use client";
 
+import { socket } from "@/components/providers/Web3Provider";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -11,8 +12,11 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { gameAPI } from "@/lib/api";
+import { toast } from "sonner";
+
 
 // Prize Chart Configuration
 const prizeChart = [
@@ -27,47 +31,90 @@ const prizeChart = [
 ];
 
 export default function LuckyDrawPage() {
-    const { address, user, realBalances, buyLuckyDrawTickets, buyTicketsWithGameBalance } = useWallet();
+
+    const [tickingPool, setTickingPool] = useState(0);
+    const [jackpotData, setJackpotData] = useState({
+        totalTickets: 1000,
+        ticketsSold: 0,
+        ticketPrice: 10,
+        totalWinners: 100,
+        winChance: '10%',
+        totalPrizePool: 0,
+        drawIsActive: true,
+        userTickets: 0,
+        recentWinners: [] as any[]
+    });
+
     const [ticketQuantity, setTicketQuantity] = useState(1);
     const [isPurchasing, setIsPurchasing] = useState(false);
     const [purchaseMethod, setPurchaseMethod] = useState<'wallet' | 'game'>('wallet');
 
-    // ... (rest of the component)
+    // Restore full useWallet destructuring to fix missing variables
+    const { address, user, realBalances, buyLuckyDrawTickets, buyTicketsWithGameBalance } = useWallet();
 
-    // Replace the handleBuyTickets or the JSX part for purchasing
-
-
-    const [tickingPool, setTickingPool] = useState(70000);
-
-    // Initial Jackpot State (Sync with Contract via WalletProvider if available)
-    const jackpotData = useMemo(() => {
-        return {
-            totalTickets: 10000,
-            ticketsSold: 1560,
-            ticketPrice: 10,
-            totalWinners: 1000,
-            winChance: '10%',
-            totalPrizePool: 70000,
-            drawIsActive: true,
-            userTickets: 2,
-            recentWinners: [
-                { wallet: '0x71...3A2', prize: '10,000', rank: '1st' },
-                { wallet: '0x49...1B5', prize: '5,000', rank: '2nd' },
-                { wallet: '0xBC...E91', prize: '4,000', rank: '3rd' }
-            ]
-        };
+    const fetchStatus = useCallback(async () => {
+        try {
+            const response = await gameAPI.getLuckyDrawStatus();
+            if (response.status === 'success') {
+                setJackpotData(prev => ({
+                    ...prev,
+                    ...response.data,
+                    // If backend sends prizes, map them, otherwise keep static/default or map differently
+                }));
+                // Update ticking pool base logic if needed
+                setTickingPool(response.data.totalPrizePool || 0); // Start from real pool
+            }
+        } catch (error) {
+            console.error("Failed to fetch jackpot status", error);
+        }
     }, []);
 
-    // Cyber-Drip Ticker Logic
+    useEffect(() => {
+        fetchStatus();
+
+        const currentSocket = socket;
+        if (currentSocket) {
+            const onStatusUpdate = (data: any) => {
+                setJackpotData(prev => ({ ...prev, ...data }));
+                if (data.totalPrizePool) setTickingPool(data.totalPrizePool);
+            };
+
+            const onTicketSold = (data: any) => {
+                setJackpotData(prev => ({
+                    ...prev,
+                    ticketsSold: data.ticketsSold,
+                    totalTickets: data.totalTickets,
+                    progress: data.progress
+                }));
+                // Real-time pool update calculation if needed, or rely on status update
+            };
+
+            const onNewRound = (data: any) => {
+                toast.info(`New Lucky Draw Round #${data.roundNumber} Started!`);
+                fetchStatus(); // Refresh full state
+            };
+
+            currentSocket.on('jackpot:status_update', onStatusUpdate);
+            currentSocket.on('jackpot:ticket_sold', onTicketSold);
+            currentSocket.on('jackpot:new_round', onNewRound);
+
+            return () => {
+                currentSocket.off('jackpot:status_update', onStatusUpdate);
+                currentSocket.off('jackpot:ticket_sold', onTicketSold);
+                currentSocket.off('jackpot:new_round', onNewRound);
+            };
+        }
+    }, [fetchStatus]);
+
+    // Cyber-Drip Ticker Logic (Visual effect only, base updated by real data)
     useEffect(() => {
         const interval = setInterval(() => {
             setTickingPool(prev => {
-                // Micro-drip accumulation (simulation of 20% cashback fuel + buy-ins)
-                const drip = 0.00018 + (Math.random() * 0.00005);
+                // Micro-drip to keep it alive between socket updates
+                const drip = 0.00001;
                 return prev + drip;
             });
-        }, 1500);
-
+        }, 1000);
         return () => clearInterval(interval);
     }, []);
 

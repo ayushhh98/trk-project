@@ -10,10 +10,11 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { clubAPI } from "@/lib/api";
 
 // Rank Structure Configuration
-const rankStructure = [
+const DEFAULT_RANK_STRUCTURE = [
     { id: 'Rank 1', name: 'Bronze Director', pool: '2%', target: 10000, color: 'stone' },
     { id: 'Rank 2', name: 'Silver Director', pool: '2%', target: 50000, color: 'blue' },
     { id: 'Rank 3', name: 'Gold Director', pool: '1%', target: 250000, color: 'amber' },
@@ -25,8 +26,29 @@ const rankStructure = [
 export default function ClubIncPage() {
     const { address, user } = useWallet();
 
+    type ClubRankProgress = {
+        id: string;
+        name: string;
+        target: number;
+        strongLegReq: number;
+        otherLegsReq: number;
+    };
+
+    type ClubData = {
+        currentRank: { id: string; name: string };
+        totalTurnover: number;
+        poolPercentage: string;
+        dailyPoolAmount: number;
+        earningsToday: number;
+        totalEarned: number;
+        strongLegVolume: number;
+        otherLegsVolume: number;
+        totalTeamVolume: number;
+        nextRank: ClubRankProgress | null;
+    };
+
     // Mock Club Data
-    const clubData = {
+    const defaultClubData: ClubData = {
         currentRank: { id: 'Rank 1', name: 'Bronze Director' },
         totalTurnover: 1250000,
         poolPercentage: '8%',
@@ -45,8 +67,99 @@ export default function ClubIncPage() {
         }
     };
 
-    const strongLegProgress = Math.min((clubData.strongLegVolume / (clubData.nextRank?.strongLegReq || 1)) * 100, 100);
-    const otherLegsProgress = Math.min((clubData.otherLegsVolume / (clubData.nextRank?.otherLegsReq || 1)) * 100, 100);
+    const [clubData, setClubData] = useState<ClubData>(defaultClubData);
+    const [rankStructure, setRankStructure] = useState(DEFAULT_RANK_STRUCTURE);
+
+    const rankMetaById = useMemo(() => {
+        const map = new Map<string, { name: string; color: string }>();
+        DEFAULT_RANK_STRUCTURE.forEach((rank) => map.set(rank.id, { name: rank.name, color: rank.color }));
+        return map;
+    }, []);
+
+    const resolveRankName = (id?: string) => {
+        if (!id || id === 'Rank 0' || id === 'None') return 'Unranked';
+        return rankMetaById.get(id)?.name || id;
+    };
+
+    const mergeRanks = (apiRanks: Array<{ id: string; name?: string; poolShare?: string; target?: number }> = []) => {
+        if (!apiRanks.length) return DEFAULT_RANK_STRUCTURE;
+        return DEFAULT_RANK_STRUCTURE.map((rank) => {
+            const apiRank = apiRanks.find((r) => r.id === rank.id);
+            return {
+                ...rank,
+                name: apiRank?.name || rank.name,
+                pool: apiRank?.poolShare || rank.pool,
+                target: apiRank?.target ?? rank.target
+            };
+        });
+    };
+
+    useEffect(() => {
+        let isActive = true;
+
+        const loadClubData = async () => {
+            try {
+                const [statusRes, structureRes] = await Promise.all([
+                    clubAPI.getStatus(),
+                    clubAPI.getStructure()
+                ]);
+
+                if (!isActive) return;
+
+                const apiRanks = structureRes?.data?.ranks || [];
+                setRankStructure(mergeRanks(apiRanks));
+
+                const status = statusRes?.data || {};
+                const apiCurrentRank = status?.currentRank?.id;
+                const fallbackRankId = user?.clubRank && user.clubRank !== 'Rank 0' ? user.clubRank : undefined;
+                const currentRankId = apiCurrentRank || fallbackRankId || 'Rank 0';
+                const currentRankName = status?.currentRank?.name || resolveRankName(currentRankId);
+
+                const strongLegVolume = status?.qualification?.strongLegVolume ?? 0;
+                const otherLegsVolume = status?.qualification?.otherLegsVolume ?? 0;
+                const totalTeamVolume = status?.nextRank?.current ?? (strongLegVolume + otherLegsVolume);
+
+                setClubData({
+                    currentRank: { id: currentRankId, name: currentRankName },
+                    totalTurnover: status?.dailyPool?.totalTurnover ?? defaultClubData.totalTurnover,
+                    poolPercentage: status?.dailyPool?.poolPercentage ?? defaultClubData.poolPercentage,
+                    dailyPoolAmount: status?.dailyPool?.totalPoolAmount ?? defaultClubData.dailyPoolAmount,
+                    earningsToday: status?.earnings?.today ?? 0,
+                    totalEarned: status?.earnings?.total ?? 0,
+                    strongLegVolume,
+                    otherLegsVolume,
+                    totalTeamVolume,
+                    nextRank: status?.nextRank
+                        ? {
+                            id: status.nextRank.id,
+                            name: status.nextRank.name,
+                            target: status.nextRank.target,
+                            strongLegReq: status.nextRank.strongLegReq,
+                            otherLegsReq: status.nextRank.otherLegsReq
+                        }
+                        : null
+                });
+            } catch (error) {
+                console.warn("Club status fetch failed:", error);
+            }
+        };
+
+        loadClubData();
+        return () => {
+            isActive = false;
+        };
+    }, [user?.clubRank]);
+
+    const effectiveNextRank = clubData.nextRank || {
+        id: clubData.currentRank.id,
+        name: clubData.currentRank.name,
+        target: clubData.totalTeamVolume || 0,
+        strongLegReq: clubData.strongLegVolume || 1,
+        otherLegsReq: clubData.otherLegsVolume || 1
+    };
+
+    const strongLegProgress = Math.min((clubData.strongLegVolume / (effectiveNextRank.strongLegReq || 1)) * 100, 100);
+    const otherLegsProgress = Math.min((clubData.otherLegsVolume / (effectiveNextRank.otherLegsReq || 1)) * 100, 100);
 
     return (
         <div className="min-h-screen bg-background pb-32 selection:bg-amber-500/30">
@@ -138,7 +251,7 @@ export default function ClubIncPage() {
                                             Qualification <span className="text-white/20">Status</span>
                                         </h2>
                                         <p className="text-sm text-white/40 leading-relaxed uppercase tracking-widest">
-                                            To reach <span className="text-white font-bold">{clubData.nextRank.name}</span>, you must build balanced volume:
+                                            To reach <span className="text-white font-bold">{effectiveNextRank.name}</span>, you must build balanced volume:
                                             50% from your strongest leg and 50% from all other combined legs.
                                         </p>
                                     </div>
@@ -153,7 +266,7 @@ export default function ClubIncPage() {
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Target Contribution</div>
-                                                    <div className="text-sm font-black text-white/40">${clubData.nextRank.strongLegReq.toLocaleString('en-US')}</div>
+                                                    <div className="text-sm font-black text-white/40">${effectiveNextRank.strongLegReq.toLocaleString('en-US')}</div>
                                                 </div>
                                             </div>
                                             <div className="h-4 bg-white/5 rounded-full p-1 border border-white/10 overflow-hidden relative">
@@ -176,7 +289,7 @@ export default function ClubIncPage() {
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="text-[10px] font-black text-green-500 uppercase tracking-widest">Target Contribution</div>
-                                                    <div className="text-sm font-black text-white/40">${clubData.nextRank.otherLegsReq.toLocaleString('en-US')}</div>
+                                                    <div className="text-sm font-black text-white/40">${effectiveNextRank.otherLegsReq.toLocaleString('en-US')}</div>
                                                 </div>
                                             </div>
                                             <div className="h-4 bg-white/5 rounded-full p-1 border border-white/10 overflow-hidden relative">
@@ -202,11 +315,11 @@ export default function ClubIncPage() {
                                             <div className="text-[9px] font-bold text-amber-500 uppercase mt-1">USD Volume</div>
                                         </div>
                                         <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.5em]">
-                                            Goal: ${clubData.nextRank.target.toLocaleString('en-US')}
+                                            Goal: ${effectiveNextRank.target.toLocaleString('en-US')}
                                         </div>
                                     </div>
-                                    {/* Animated Ring (In real SVG implementation) */}
-                                    <svg className="absolute inset-0 w-full h-full -rotate-90">
+                                    {/* Animated Rotating Ring */}
+                                    <svg className="absolute inset-0 w-full h-full -rotate-90 animate-[spin_8s_linear_infinite]">
                                         <circle cx="50%" cy="50%" r="45%" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="10" />
                                         <motion.circle
                                             cx="50%" cy="50%" r="45%" fill="none"
@@ -233,7 +346,7 @@ export default function ClubIncPage() {
                                 <h3 className="text-2xl font-black text-white italic uppercase tracking-tight">Ecosystem Ranks</h3>
                                 <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em]">Climb the ladder of success</p>
                             </div>
-                            <Link href="/referral" className="h-14 px-8 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white flex items-center justify-center transition-all group">
+                            <Link href="/dashboard/referral" className="h-14 px-8 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white flex items-center justify-center transition-all group">
                                 <span className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest leading-none">
                                     View Organization <ArrowUpRight className="h-4 w-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
                                 </span>
@@ -271,7 +384,7 @@ export default function ClubIncPage() {
                                             <div className="flex items-center justify-center gap-2 text-green-500 bg-green-500/10 py-3 rounded-2xl border border-green-500/20 text-[10px] font-black uppercase tracking-widest">
                                                 <CheckCircle2 className="h-4 w-4" /> Qualified
                                             </div>
-                                        ) : rank.id === clubData.nextRank.id ? (
+                                        ) : rank.id === effectiveNextRank.id ? (
                                             <div className="flex items-center justify-center gap-2 text-amber-500 bg-amber-500/10 py-3 rounded-2xl border border-amber-500/20 text-[10px] font-black uppercase tracking-widest animate-pulse">
                                                 Current Goal
                                             </div>

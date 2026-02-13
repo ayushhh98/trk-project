@@ -24,7 +24,7 @@ export function BetControls({ amount, setAmount, disabled, currencyLabel = "SC" 
         const val = e.target.value;
         setInputValue(val);
         const num = parseFloat(val);
-        if (!isNaN(num) && num >= 0.1) {
+        if (!isNaN(num) && num >= 1) {
             setAmount(num);
         }
     };
@@ -52,7 +52,7 @@ export function BetControls({ amount, setAmount, disabled, currencyLabel = "SC" 
                     ))}
                     <div className="w-px h-6 bg-white/10 mx-2" />
                     <button
-                        onClick={() => setAmount(0.1)}
+                        onClick={() => setAmount(1)}
                         disabled={disabled}
                         className="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-primary hover:bg-primary/10 transition-all"
                     >
@@ -74,7 +74,7 @@ export function BetControls({ amount, setAmount, disabled, currencyLabel = "SC" 
                     <div className="absolute inset-0 bg-primary/5 rounded-2xl blur-xl group-focus-within:bg-primary/10 transition-all" />
                     <Input
                         type="number"
-                        min="0.1"
+                        min="1"
                         step="0.1"
                         disabled={disabled}
                         value={inputValue}

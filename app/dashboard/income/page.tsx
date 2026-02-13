@@ -18,6 +18,7 @@ import { GAME_CONTRACT_ADDRESS } from "@/config/contracts";
 import { formatUnits } from "viem";
 import { toast } from "sonner";
 import { WithdrawalModal } from "@/components/cash/WithdrawalModal";
+import { WithdrawalMatrix } from "@/components/admin/WithdrawalMatrix";
 
 // Visual accents for the cybernetic theme
 const GlowBackground = () => (
@@ -212,7 +213,7 @@ export default function IncomePage() {
                                 </div>
 
                                 <div className="flex flex-col gap-4 w-full md:w-auto min-w-[200px]">
-                                    <Link href="/dashboard/deposit" className="w-full">
+                                    <Link href="/dashboard/cash?deposit=true" className="w-full">
                                         <Button
                                             className="w-full h-12 bg-emerald-500 hover:bg-emerald-400 text-black border border-emerald-500/20 font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:scale-105 active:scale-95"
                                         >
@@ -257,6 +258,18 @@ export default function IncomePage() {
                         </div>
                     </motion.div>
                 )}
+
+                {/* Withdrawal Matrix */}
+                <div className="space-y-6">
+                    <div className="flex items-center gap-3">
+                        <div className="h-2 w-2 rounded-full bg-primary" />
+                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40">WITHDRAWAL_MATRIX</h2>
+                    </div>
+                    <WithdrawalMatrix
+                        currentTier={user?.activation?.tier || "none"}
+                        totalDeposited={user?.activation?.totalDeposited || 0}
+                    />
+                </div>
 
                 {/* Primary Intelligence Grid */}
                 <div className="space-y-8">

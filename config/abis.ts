@@ -160,6 +160,30 @@ export const TRKGameABI = [
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getPools",
+        "outputs": [
+            { "internalType": "uint256", "name": "gamePool", "type": "uint256" },
+            { "internalType": "uint256", "name": "clubPool", "type": "uint256" },
+            { "internalType": "uint256", "name": "luckyDraw", "type": "uint256" },
+            { "internalType": "uint256", "name": "protectionPool", "type": "uint256" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getUserStats",
+        "outputs": [
+            { "internalType": "uint256", "name": "totalUsers", "type": "uint256" },
+            { "internalType": "uint256", "name": "activeUsers", "type": "uint256" },
+            { "internalType": "uint256", "name": "totalVolume", "type": "uint256" },
+            { "internalType": "uint256", "name": "totalWithdrawn", "type": "uint256" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
     }
 ] as const;
 
@@ -242,6 +266,18 @@ export const ERC20ABI = [
         "outputs": [{ "name": "remaining", "type": "uint256" }],
         "payable": false,
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "constant": false,
+        "inputs": [
+            { "name": "_to", "type": "address" },
+            { "name": "_value", "type": "uint256" }
+        ],
+        "name": "transfer",
+        "outputs": [{ "name": "success", "type": "bool" }],
+        "payable": false,
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {

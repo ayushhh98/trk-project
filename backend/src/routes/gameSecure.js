@@ -52,10 +52,10 @@ router.post('/bet/commit', auth, antiReplayCommit, requireCaptchaIfSuspicious, a
             ? featureFlags.MAX_BET_AMOUNT_REAL
             : featureFlags.MAX_BET_AMOUNT_PRACTICE;
 
-        if (betData.betAmount < 0.5 || betData.betAmount > maxBet) {
+        if (betData.betAmount < 1.0 || betData.betAmount > maxBet) {
             return res.status(400).json({
                 status: 'error',
-                message: `Bet amount must be between 0.5 and ${maxBet} USDT`,
+                message: `Bet amount must be between 1.0 and ${maxBet} USDT`,
                 code: 'INVALID_BET_AMOUNT'
             });
         }

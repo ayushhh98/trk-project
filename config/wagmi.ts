@@ -1,6 +1,8 @@
 import { http, createConfig, cookieStorage, createStorage } from 'wagmi';
 import { bsc, bscTestnet } from 'wagmi/chains';
-import { metaMask, walletConnect, injected } from 'wagmi/connectors';
+import { injected } from '@wagmi/core';
+// Use package exports (deep paths are not exported).
+import { metaMask, walletConnect } from '@wagmi/connectors';
 
 // WalletConnect Project ID (Load from Env or use public fallback)
 export const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'c57ca95b47569778a828d19178114f4d';

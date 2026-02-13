@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Gift, Zap, Users, Loader2, Sparkles, Trophy, History } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { socket } from "@/components/providers/Web3Provider";
+import { useJackpotSocket } from "@/hooks/useJackpotSocket";
 
 interface Winner {
     wallet: string;
@@ -37,31 +37,57 @@ export function LuckyDraw() {
         }
     }, []);
 
+    // Use the robust socket hook for real-time updates
+    const { isConnected } = useJackpotSocket({
+        onStatusUpdate: (data) => {
+            // Update local status with new data
+            setStatus((prev: any) => ({
+                ...prev,
+                ...data,
+                // Ensure recentWinners is preserved if not sent in partial update
+                recentWinners: data.recentWinners || prev?.recentWinners || []
+            }));
+
+            // If the system is halted or resumed, toast a notification
+            if (data.drawIsActive !== undefined && status) {
+                if (data.drawIsActive && !status.drawIsActive) {
+                    toast.success("Jackpot System Online", { icon: <Zap className="h-4 w-4 text-emerald-500" /> });
+                } else if (!data.drawIsActive && status.drawIsActive) {
+                    toast.warning("Jackpot System Paused", { icon: <Loader2 className="h-4 w-4 text-amber-500" /> });
+                }
+            }
+        },
+        onTicketSold: (data) => {
+            // Increment ticket count and progress locally for smooth animation
+            setStatus((prev: any) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    ticketsSold: data.ticketsSold,
+                    // Optionally update recent purchases lists if we had that in state
+                };
+            });
+        },
+        onWinnerAnnounced: (winner) => {
+            setWinners(prev => [winner, ...prev].slice(0, 10));
+            toast.success(`JACKPOT! ${winner.wallet.slice(0, 6)}... won ${winner.prize}!`, {
+                icon: <Trophy className="h-5 w-5 text-amber-500" />,
+                duration: 8000
+            });
+            fetchStatus(); // Refresh full status to be sure
+            refreshUser(); // Sync balance if user was the winner
+        },
+        onNewRound: (data) => {
+            toast.info(`Round ${data.roundNumber} Started!`, { icon: <Sparkles className="h-4 w-4 text-purple-500" /> });
+            fetchStatus();
+        }
+    });
+
     useEffect(() => {
         fetchStatus();
         const interval = setInterval(fetchStatus, 30000); // Poll every 30s as fallback
-
-        // Listen for Real-Time WINNER Events
-        const s = socket;
-        if (s) {
-            const handleWinner = (winner: Winner) => {
-                setWinners(prev => [winner, ...prev].slice(0, 10));
-                toast.success(`JACKPOT! ${winner.wallet.slice(0, 6)}... won ${winner.prize}!`, {
-                    icon: <Trophy className="h-5 w-5 text-amber-500" />
-                });
-                fetchStatus(); // Refresh progress
-                refreshUser(); // Sync balance if user was the winner
-            };
-
-            s.on('lucky_draw_winner', handleWinner);
-            return () => {
-                s.off('lucky_draw_winner', handleWinner);
-                clearInterval(interval);
-            };
-        }
-
         return () => clearInterval(interval);
-    }, [fetchStatus, refreshUser]);
+    }, [fetchStatus]);
 
     const handleBuyTicket = async () => {
         if (!token) {
@@ -111,9 +137,9 @@ export function LuckyDraw() {
                         <div className="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-[10px] font-mono font-bold text-purple-500 uppercase tracking-widest">
                             Round #{status?.currentRound || 142}
                         </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-bold animate-pulse">
-                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            LIVE FEED ACTIVE
+                        <div className={`flex items-center gap-1.5 text-[10px] font-bold animate-pulse ${isConnected ? 'text-emerald-500' : 'text-amber-500'}`}>
+                            <div className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                            {isConnected ? 'LIVE FEED ACTIVE' : 'CONNECTING...'}
                         </div>
                     </div>
                 </div>

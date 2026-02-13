@@ -26,7 +26,10 @@ const auditLogSchema = new mongoose.Schema({
             'auth_failed',
             'auth_success',
             'suspicious_activity',
-            'system_error'
+            'system_error',
+            'free_credits_claimed',
+            'reward_redemption',
+            'sweepstakes_redemption'
         ]
     },
     severity: {

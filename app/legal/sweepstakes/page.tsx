@@ -210,7 +210,7 @@ export default function SweepstakesTermsPage() {
 
                             {/* Promotional Poster Card */}
                             <div className="relative overflow-hidden rounded-2xl aspect-[4/5] group cursor-pointer border border-white/10 shadow-2xl">
-                                <Link href="/login">
+                                <Link href="/auth">
                                     <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 to-blue-600 transition-all duration-500 group-hover:scale-110" />
                                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mixed-blend-overlay" />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />

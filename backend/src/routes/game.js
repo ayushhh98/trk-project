@@ -18,10 +18,10 @@ router.post('/bet', auth, async (req, res) => {
             });
         }
 
-        if (!betAmount || betAmount < 0.5) {
+        if (!betAmount || betAmount < 1.0) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Minimum bet amount is 0.5 USDT'
+                message: 'Minimum bet amount is 1.0 USDT'
             });
         }
 
@@ -153,6 +153,12 @@ router.post('/bet', auth, async (req, res) => {
         }
 
         await user.save();
+
+        // Process referral commissions for winners (Real mode only)
+        if (gameType === 'real' && isWin) {
+            const { distributeWinnerCommissions } = require('../utils/incomeDistributor');
+            await distributeWinnerCommissions(user._id, payout);
+        }
 
         // Create game record
         const game = new Game({

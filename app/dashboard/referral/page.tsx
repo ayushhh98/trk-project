@@ -44,7 +44,7 @@ const powerOf10Matrix = [
 // Mocks removed as data is now fetched from backend
 
 export default function ReferralPage() {
-    const { address, isRegisteredOnChain, registerOnChain } = useWallet();
+    const { address, isRegisteredOnChain, registerOnChain, user } = useWallet();
     const [copied, setCopied] = useState(false);
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [showPowerOf10, setShowPowerOf10] = useState(false);
@@ -62,24 +62,75 @@ export default function ReferralPage() {
     }) as { data: any };
 
     useEffect(() => {
+        if (!address) return;
+        let isMounted = true;
+
         const fetchStats = async () => {
             try {
                 const res = await referralAPI.getStats();
-                if (res.status === 'success') {
+                if (res.status === 'success' && isMounted) {
                     setStats(res.data);
                 }
             } catch (err) {
                 console.error("Failed to fetch referral stats", err);
             }
         };
-        if (address) fetchStats();
-    }, [address]);
 
-    const referralLink = stats?.referralCode
-        ? `https://trk.game/ref/${stats.referralCode}`
-        : address ? `https://trk.game/ref/${address.slice(2, 8).toUpperCase()}` : "Connect wallet to get your link";
+        fetchStats();
+        const interval = setInterval(fetchStats, 15000);
 
-    const totalReward = stats?.totals?.totalEarned || 0;
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [address, user?.referralCode]);
+
+    const defaultStats = useMemo(() => {
+        const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        return {
+            referralCode: user?.referralCode || (address ? address.slice(2, 8).toUpperCase() : null),
+            directReferrals: 0,
+            maxDirectReferrals: 20,
+            totals: {
+                members: 0,
+                active: 0,
+                totalEarned: 0,
+                tier1Percent: 0,
+                tier2Percent: 0
+            },
+            levelStats: Array.from({ length: 10 }).map((_, i) => ({
+                level: i + 1,
+                members: 0,
+                active: 0,
+                totalEarned: 0
+            })),
+            level1Details: [],
+            growthData: days.map((d) => ({ date: d, newMembers: 0, volume: 0 }))
+        };
+    }, [address, user?.referralCode]);
+
+    const effectiveStats = useMemo(() => {
+        if (!stats) return defaultStats;
+
+        // Create a map of existing levels from API for quick lookup
+        const apiLevels = new Map((stats.levelStats || []).map((l: any) => [l.level, l]));
+
+        // Merge with default 10 levels to ensure structure is always visible
+        const mergedLevels = defaultStats.levelStats.map(def =>
+            apiLevels.get(def.level) || def
+        );
+
+        return {
+            ...stats,
+            levelStats: mergedLevels
+        };
+    }, [stats, defaultStats]);
+
+    const referralLink = effectiveStats?.referralCode
+        ? `https://trk.game/?ref=${effectiveStats.referralCode}`
+        : address ? `https://trk.game/?ref=${address.slice(2, 8).toUpperCase()}` : "Connect wallet to get your link";
+
+    const totalReward = effectiveStats?.totals?.totalEarned || user?.rewardPoints || 0;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(referralLink);
@@ -209,9 +260,9 @@ export default function ReferralPage() {
                 <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {[
                         { label: 'Total Earnings', value: `$${totalReward.toFixed(2)}`, sub: 'PRACTICE BONUS', icon: Gift, color: 'emerald' },
-                        { label: 'Team Size', value: stats?.totals?.members || '0', sub: 'LAST 10 LEVELS', icon: Users, color: 'blue' },
-                        { label: 'Active Today', value: stats?.totals?.active || '0', sub: 'ENGAGED MEMBERS', icon: Zap, color: 'amber' },
-                        { label: 'Directs', value: `${stats?.directReferrals || 0}/${stats?.maxDirectReferrals || 20}`, sub: 'BONUS CAPACITY', icon: Target, color: 'purple' }
+                        { label: 'Team Size', value: effectiveStats?.totals?.members || '0', sub: 'LAST 10 LEVELS', icon: Users, color: 'blue' },
+                        { label: 'Active Today', value: effectiveStats?.totals?.active || '0', sub: 'ENGAGED MEMBERS', icon: Zap, color: 'amber' },
+                        { label: 'Directs', value: `${effectiveStats?.directReferrals || 0}/${effectiveStats?.maxDirectReferrals || 20}`, sub: 'BONUS CAPACITY', icon: Target, color: 'purple' }
                     ].map((stat, i) => (
                         <Card key={i} className="border-white/5 bg-white/[0.02] backdrop-blur-3xl rounded-[2.5rem] overflow-hidden group hover:border-emerald-500/20 transition-all duration-500">
                             <CardContent className="p-8 space-y-4">
@@ -245,7 +296,7 @@ export default function ReferralPage() {
                             </div>
 
                             <div className="h-[300px] w-full relative group">
-                                {stats?.growthData ? (
+                                {effectiveStats?.growthData ? (
                                     <svg className="w-full h-full" viewBox="0 0 800 300">
                                         <defs>
                                             <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
@@ -254,15 +305,15 @@ export default function ReferralPage() {
                                             </linearGradient>
                                         </defs>
                                         <path
-                                            d={`M0,300 ${stats.growthData.map((d: any, i: number) =>
-                                                `L${(i * 800) / (stats.growthData.length - 1)},${300 - (d.newMembers * 15)}`
+                                            d={`M0,300 ${effectiveStats.growthData.map((d: any, i: number) =>
+                                                `L${(i * 800) / (effectiveStats.growthData.length - 1)},${300 - (d.newMembers * 15)}`
                                             ).join(' ')} L800,300 Z`}
                                             fill="url(#chartGradient)"
                                             className="transition-all duration-1000"
                                         />
                                         <path
-                                            d={`M0,${300 - (stats.growthData[0].newMembers * 15)} ${stats.growthData.map((d: any, i: number) =>
-                                                `L${(i * 800) / (stats.growthData.length - 1)},${300 - (d.newMembers * 15)}`
+                                            d={`M0,${300 - (effectiveStats.growthData[0].newMembers * 15)} ${effectiveStats.growthData.map((d: any, i: number) =>
+                                                `L${(i * 800) / (effectiveStats.growthData.length - 1)},${300 - (d.newMembers * 15)}`
                                             ).join(' ')}`}
                                             fill="none"
                                             stroke="#10b981"
@@ -271,10 +322,10 @@ export default function ReferralPage() {
                                             className="transition-all duration-1000"
                                         />
                                         {/* Data Points */}
-                                        {stats.growthData.map((d: any, i: number) => (
+                                        {effectiveStats.growthData.map((d: any, i: number) => (
                                             <circle
                                                 key={i}
-                                                cx={(i * 800) / (stats.growthData.length - 1)}
+                                                cx={(i * 800) / (effectiveStats.growthData.length - 1)}
                                                 cy={300 - (d.newMembers * 15)}
                                                 r="6"
                                                 fill="#10b981"
@@ -296,7 +347,7 @@ export default function ReferralPage() {
                             </div>
 
                             <div className="grid grid-cols-7 gap-4 text-center">
-                                {(stats?.growthData || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']).map((d: any, i: number) => (
+                                {(effectiveStats?.growthData || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']).map((d: any, i: number) => (
                                     <div key={i} className="text-[10px] font-black text-white/20 uppercase tracking-widest">{d.date || d}</div>
                                 ))}
                             </div>
@@ -315,19 +366,19 @@ export default function ReferralPage() {
                                 {[
                                     {
                                         label: 'Tier 1 Activation',
-                                        percent: stats?.totals?.tier1Percent || 0,
+                                        percent: effectiveStats?.totals?.tier1Percent || 0,
                                         color: 'emerald',
                                         detail: 'Unlocked Basic Rewards'
                                     },
                                     {
                                         label: 'Tier 2 Expansion',
-                                        percent: stats?.totals?.tier2Percent || 0,
+                                        percent: effectiveStats?.totals?.tier2Percent || 0,
                                         color: 'blue',
                                         detail: 'Full Ecosystem Access'
                                     },
                                     {
                                         label: 'Loyalty Retention',
-                                        percent: stats?.totals?.members > 0 ? Math.round((stats?.totals?.active / stats.totals.members) * 100) : 0,
+                                        percent: effectiveStats?.totals?.members > 0 ? Math.round((effectiveStats?.totals?.active / effectiveStats.totals.members) * 100) : 0,
                                         color: 'amber',
                                         detail: 'Active Game Participation'
                                     }
@@ -431,7 +482,7 @@ export default function ReferralPage() {
                     </div>
 
                     <div className="grid md:grid-cols-2 lg:grid-cols-1 gap-4">
-                        {(stats?.levelStats || []).map((level: any) => (
+                        {(effectiveStats?.levelStats || []).map((level: any) => (
                             <motion.div
                                 key={level.level}
                                 onClick={() => setSelectedLevel(selectedLevel === level.level ? null : level.level)}
@@ -477,28 +528,39 @@ export default function ReferralPage() {
                                 {selectedLevel === level.level && (
                                     <div className="px-10 pb-10 pt-4 border-t border-white/5 space-y-6">
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                            {level.level === 1 && stats?.level1Details ? (
-                                                stats.level1Details.map((member: any, i: number) => (
-                                                    <div key={i} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center gap-4 group/item hover:bg-white/5 transition-all">
-                                                        <div className={cn(
-                                                            "h-10 w-10 rounded-full flex items-center justify-center text-[10px] font-black",
-                                                            member.active ? "bg-emerald-500/20 text-emerald-500" : "bg-white/5 text-white/20"
-                                                        )}>
-                                                            {member.active ? <Zap className="h-4 w-4" /> : "OFF"}
+                                            {level.level === 1 && effectiveStats?.level1Details ? (
+                                                effectiveStats.level1Details.map((member: any, i: number) => {
+                                                    const displayName = member.name || member.email || member.address || "Unknown";
+                                                    const joined = member.joined ? new Date(member.joined).toLocaleDateString() : "Unknown";
+                                                    const lastActive = member.lastActive ? new Date(member.lastActive).toLocaleDateString() : "N/A";
+                                                    return (
+                                                        <div key={i} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex items-start gap-4 group/item hover:bg-white/5 transition-all">
+                                                            <div className={cn(
+                                                                "h-10 w-10 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5",
+                                                                member.active ? "bg-emerald-500/20 text-emerald-500" : "bg-white/5 text-white/20"
+                                                            )}>
+                                                                {member.active ? <Zap className="h-4 w-4" /> : "OFF"}
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <div className="text-xs font-black text-white tracking-wider uppercase">{displayName}</div>
+                                                                <div className="text-[9px] font-mono text-white/40">{member.address}</div>
+                                                                <div className="text-[9px] font-bold text-white/40 uppercase tracking-widest">
+                                                                    Tier: {member.tier === 'none' ? 'Not Active' : member.tier.toUpperCase()}
+                                                                </div>
+                                                                <div className="text-[9px] text-white/30">
+                                                                    Joined: {joined} · Last Active: {lastActive}
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <div className="text-[8px] font-black text-white/20 uppercase tracking-widest">{member.address}</div>
-                                                            <div className="text-xs font-bold text-white tracking-widest italic">{member.tier === 'none' ? 'Not Active' : member.tier.toUpperCase()}</div>
-                                                        </div>
-                                                    </div>
-                                                ))
+                                                    );
+                                                })
                                             ) : (
                                                 <div className="col-span-4 py-8 text-center text-[10px] font-black text-white/20 uppercase tracking-[0.3em]">
                                                     Deep Structure Access Unlocked via Tier 2
                                                 </div>
                                             )}
                                         </div>
-                                        {level.level === 1 && stats?.level1Details?.length > 0 && (
+                                        {level.level === 1 && effectiveStats?.level1Details?.length > 0 && (
                                             <div className="text-center">
                                                 <button className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.3em] hover:scale-110 transition-transform">Explore Entire Tier {level.level} Network</button>
                                             </div>

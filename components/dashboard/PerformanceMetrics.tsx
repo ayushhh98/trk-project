@@ -17,15 +17,16 @@ export function PerformanceMetrics() {
 
     // ROI Calculation using totalProfit
     const totalDeposited = user?.activation?.totalDeposited || 0;
-    const roi = totalDeposited > 0
-        ? (totalProfit / totalDeposited) * 100
+    const safeProfit = totalProfit || 0;
+    const roi = totalDeposited > 0 && !isNaN(safeProfit)
+        ? (safeProfit / totalDeposited) * 100
         : 0;
 
     // 2. Lifetime Earnings
     // Sum of all winnings + recovered cashback + commissions
-    const lifetimeEarnings = (user?.totalWinnings || 0) +
-        (user?.cashbackStats?.totalRecovered || 0) +
-        (user?.teamStats?.totalCommission || 0);
+    const lifetimeEarnings = Number((user?.totalWinnings || 0)) +
+        Number((user?.cashbackStats?.totalRecovered || 0)) +
+        Number((user?.teamStats?.totalCommission || 0));
 
     // 3. Network Acceleration (Active Members)
     const activeMembers = user?.teamStats?.activeMembers || 0;
@@ -33,7 +34,9 @@ export function PerformanceMetrics() {
 
     // 4. Credit Estimate (Projected)
     // Simple projection: If ROI > 0, project next month based on current velocity
-    const creditEstimate = realBalances.totalUnified * (1 + (roi / 100));
+    const currentBalance = Number(realBalances?.totalUnified) || 0;
+    const projectionMultiplier = isNaN(roi) ? 1 : (1 + (roi / 100));
+    const creditEstimate = currentBalance * projectionMultiplier;
 
     // Actions
     const handleDownloadReport = () => {
@@ -72,7 +75,7 @@ export function PerformanceMetrics() {
     };
 
     const referralLink = user?.walletAddress
-        ? `https://trk.game/ref/${user.referralCode || user.walletAddress.slice(2, 8)}`
+        ? `https://trk.game/?ref=${user.referralCode || user.walletAddress.slice(2, 8)}`
         : "";
 
     const handleCopyLink = () => {
@@ -108,103 +111,138 @@ export function PerformanceMetrics() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 {/* Net Profit/Loss Card */}
-                <Card className="bg-black/40 border-white/5 backdrop-blur-xl group hover:border-emerald-500/30 transition-all">
-                    <CardContent className="p-6">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className={cn(
-                                "p-2 rounded-lg border",
-                                totalProfit >= 0 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" : "bg-rose-500/10 border-rose-500/20 text-rose-500"
-                            )}>
-                                <TrendingUp className="h-5 w-5" />
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0 }}
+                >
+                    <Card className="relative overflow-hidden bg-gradient-to-br from-black/60 via-black/40 to-black/60 border border-emerald-500/20 backdrop-blur-xl group hover:border-emerald-500/50 hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] transition-all duration-300">
+                        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardContent className="p-6 relative z-10">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className={cn(
+                                    "p-2.5 rounded-xl border backdrop-blur-sm",
+                                    totalProfit >= 0 ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400" : "bg-rose-500/20 border-rose-500/30 text-rose-400"
+                                )}>
+                                    <TrendingUp className="h-5 w-5" />
+                                </div>
+                                <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full", totalProfit >= 0 ? "text-emerald-400 bg-emerald-500/10" : "text-rose-400 bg-rose-500/10")}>
+                                    {totalProfit >= 0 ? "GAIN" : "LOSS"}
+                                </span>
                             </div>
-                            <span className={totalProfit >= 0 ? "text-emerald-500 text-xs font-bold" : "text-rose-500 text-xs font-bold"}>
-                                {totalProfit >= 0 ? "GAIN" : "DEDUCTION"}
-                            </span>
-                        </div>
-                        <div className="space-y-1">
-                            <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Net Winnings</div>
-                            <div className={cn("text-xl font-mono font-bold", totalProfit >= 0 ? "text-emerald-500" : "text-rose-500")}>
-                                {totalProfit >= 0 ? "+" : ""}{totalProfit.toFixed(2)} <span className="text-xs">SC</span>
+                            <div className="space-y-1.5">
+                                <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Net Winnings</div>
+                                <div className={cn("text-2xl font-mono font-black", totalProfit >= 0 ? "text-emerald-400" : "text-rose-400")}>
+                                    {totalProfit >= 0 ? "+" : ""}{(isNaN(totalProfit) ? 0 : totalProfit).toFixed(2)} <span className="text-xs opacity-60">SC</span>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                </motion.div>
 
                 {/* ROI Card */}
-                <Card className="bg-black/40 border-white/5 backdrop-blur-xl group hover:border-emerald-500/30 transition-all">
-                    <CardContent className="p-6">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500">
-                                <TrendingUp className="h-5 w-5" />
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                >
+                    <Card className="relative overflow-hidden bg-gradient-to-br from-black/60 via-black/40 to-black/60 border border-cyan-500/20 backdrop-blur-xl group hover:border-cyan-500/50 hover:shadow-[0_0_30px_rgba(6,182,212,0.15)] transition-all duration-300">
+                        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardContent className="p-6 relative z-10">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="p-2.5 rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 backdrop-blur-sm">
+                                    <TrendingUp className="h-5 w-5" />
+                                </div>
+                                <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full", roi >= 0 ? "text-cyan-400 bg-cyan-500/10" : "text-rose-400 bg-rose-500/10")}>
+                                    {roi >= 0 ? "+" : ""}{(isNaN(roi) ? 0 : roi).toFixed(2)}%
+                                </span>
                             </div>
-                            <span className={roi >= 0 ? "text-emerald-500 text-xs font-bold" : "text-rose-500 text-xs font-bold"}>
-                                {roi >= 0 ? "+" : ""}{roi.toFixed(2)}%
-                            </span>
-                        </div>
-                        <div className="space-y-1">
-                            <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Performance Index</div>
-                            <div className="text-xl font-mono font-bold text-white">
-                                {roi.toFixed(2)}%
+                            <div className="space-y-1.5">
+                                <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Performance Index</div>
+                                <div className="text-2xl font-mono font-black text-white">
+                                    {(isNaN(roi) ? 0 : roi).toFixed(2)}<span className="text-lg opacity-60">%</span>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                </motion.div>
 
                 {/* Lifetime Earnings */}
-                <Card className="bg-black/40 border-white/5 backdrop-blur-xl group hover:border-amber-500/30 transition-all">
-                    <CardContent className="p-6">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500">
-                                <Target className="h-5 w-5" />
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                >
+                    <Card className="relative overflow-hidden bg-gradient-to-br from-black/60 via-black/40 to-black/60 border border-amber-500/20 backdrop-blur-xl group hover:border-amber-500/50 hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] transition-all duration-300">
+                        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardContent className="p-6 relative z-10">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 backdrop-blur-sm">
+                                    <Target className="h-5 w-5" />
+                                </div>
+                                <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full text-amber-400 bg-amber-500/10">Total</span>
                             </div>
-                            <span className="text-amber-500 text-xs font-bold">Total</span>
-                        </div>
-                        <div className="space-y-1">
-                            <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Lifetime Rewards</div>
-                            <div className="text-xl font-mono font-bold text-white">
-                                {lifetimeEarnings.toFixed(2)} <span className="text-xs text-amber-500">SC</span>
+                            <div className="space-y-1.5">
+                                <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Lifetime Rewards</div>
+                                <div className="text-2xl font-mono font-black text-white">
+                                    {(isNaN(lifetimeEarnings) ? 0 : lifetimeEarnings).toFixed(2)} <span className="text-xs opacity-60">SC</span>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                </motion.div>
 
                 {/* Network Acceleration */}
-                <Card className="bg-black/40 border-white/5 backdrop-blur-xl group hover:border-cyan-500/30 transition-all">
-                    <CardContent className="p-6">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-500">
-                                <Users className="h-5 w-5" />
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                >
+                    <Card className="relative overflow-hidden bg-gradient-to-br from-black/60 via-black/40 to-black/60 border border-blue-500/20 backdrop-blur-xl group hover:border-blue-500/50 hover:shadow-[0_0_30px_rgba(59,130,246,0.15)] transition-all duration-300">
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardContent className="p-6 relative z-10">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="p-2.5 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-400 backdrop-blur-sm">
+                                    <Users className="h-5 w-5" />
+                                </div>
+                                <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full text-blue-400 bg-blue-500/10">Active</span>
                             </div>
-                            <span className="text-cyan-500 text-xs font-bold">Active</span>
-                        </div>
-                        <div className="space-y-1">
-                            <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Network Speed</div>
-                            <div className="text-xl font-mono font-bold text-white">
-                                {activeMembers} <span className="text-xs text-white/40">/ {totalMembers}</span>
+                            <div className="space-y-1.5">
+                                <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Network Speed</div>
+                                <div className="text-2xl font-mono font-black text-white">
+                                    {activeMembers} <span className="text-xs opacity-40">/ {totalMembers}</span>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                </motion.div>
 
                 {/* Credit Estimate */}
-                <Card className="bg-black/40 border-white/5 backdrop-blur-xl group hover:border-purple-500/30 transition-all">
-                    <CardContent className="p-6">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-500">
-                                <Zap className="h-5 w-5" />
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                >
+                    <Card className="relative overflow-hidden bg-gradient-to-br from-black/60 via-black/40 to-black/60 border border-purple-500/20 backdrop-blur-xl group hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.15)] transition-all duration-300">
+                        <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardContent className="p-6 relative z-10">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="p-2.5 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 backdrop-blur-sm">
+                                    <Zap className="h-5 w-5" />
+                                </div>
+                                <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full text-purple-400 bg-purple-500/10">Proj.</span>
                             </div>
-                            <span className="text-purple-500 text-xs font-bold">Proj.</span>
-                        </div>
-                        <div className="space-y-1">
-                            <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Projected Balance</div>
-                            <div className="text-xl font-mono font-bold text-white">
-                                {creditEstimate.toFixed(2)} <span className="text-xs text-purple-500">SC</span>
+                            <div className="space-y-1.5">
+                                <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Projected Balance</div>
+                                <div className="text-2xl font-mono font-black text-white">
+                                    {(isNaN(creditEstimate) ? 0 : creditEstimate).toFixed(2)} <span className="text-xs opacity-60">SC</span>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                </motion.div>
             </div>
 
             {/* Invite Modal */}

@@ -9,8 +9,9 @@ import { Shield, Lock, Wifi, Server, Activity, ArrowUpRight } from "lucide-react
 export function HardenedCapital() {
     const { isConnected, isRegisteredOnChain, realBalances } = useWallet();
 
-    const liquidityLevel = realBalances.totalUnified > 1000 ? "Level 3" :
-        realBalances.totalUnified > 100 ? "Level 2" : "Level 1";
+    const totalUnified = realBalances?.totalUnified || 0;
+    const liquidityLevel = totalUnified > 1000 ? "Level 3" :
+        totalUnified > 100 ? "Level 2" : "Level 1";
 
     const securityMetrics = [
         {
@@ -30,7 +31,7 @@ export function HardenedCapital() {
         },
         {
             label: "Liquidity Depth",
-            value: `${liquidityLevel} ($${realBalances.totalUnified.toFixed(0)})`,
+            value: `${liquidityLevel} ($${totalUnified.toFixed(0)})`,
             color: "text-blue-400"
         },
     ];

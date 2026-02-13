@@ -140,7 +140,7 @@ export function SweepstakesExplainer() {
                             Ready to start? Get your first package and claim your <span className="text-purple-400 font-bold">FREE SC</span> today.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
-                            <Link href="/login">
+                            <Link href="/auth">
                                 <Button size="lg" className="h-14 px-10 bg-white text-black hover:bg-white/90 font-black text-lg rounded-xl w-full sm:w-auto">
                                     Get Started
                                 </Button>

@@ -168,6 +168,7 @@ contract TRKGameFinal is Ownable, ReentrancyGuard {
     uint256 public currentPracticeRoundId;
     uint256 public currentCashRoundId;
     uint256 public totalBonusesGiven;
+    address[20] public bdWallets;
     
     // Pools
     uint256 public gamePoolBalance;

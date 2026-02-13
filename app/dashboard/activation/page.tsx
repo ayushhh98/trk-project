@@ -302,7 +302,7 @@ export default function ActivationPage() {
                                     </div>
 
                                     <div className="text-[10px] text-zinc-500 leading-relaxed italic">
-                                        Full economy access. Cashback protection enabled. Practice to Real balance tunneling authorized.
+                                        Full economy access. Cashback protection enabled. And also unlock the level when user completes the task.
                                     </div>
                                 </div>
                             </Card>

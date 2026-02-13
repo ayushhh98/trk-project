@@ -9,58 +9,14 @@ const router = express.Router();
 // ============================================
 
 // 1. Winners 8X Income Configuration
-const WINNERS_8X_CONFIG = {
-    totalMultiplier: 8,
-    directPayout: 2,      // 2X → Direct Wallet Payout
-    autoCompound: 6,      // 6X → Auto Compound into Game Wallet
-};
+const {
+    distributeDepositCommissions,
+    distributeWinnerCommissions,
+    getUnlockedLevels
+} = require('../utils/incomeDistributor');
 
-// 2. Direct Level Income (from team deposits)
-// Requires 10 USDT activation
-// Each direct opens ONE level (max 10 directs for all 15 levels)
-const DIRECT_LEVEL_RATES = {
-    1: 0.05,      // Level 1: 5%
-    2: 0.02,      // Level 2: 2%
-    3: 0.01,      // Level 3-5: 1%
-    4: 0.01,
-    5: 0.01,
-    6: 0.005,     // Level 6-15: 0.5%
-    7: 0.005,
-    8: 0.005,
-    9: 0.005,
-    10: 0.005,
-    11: 0.005,
-    12: 0.005,
-    13: 0.005,
-    14: 0.005,
-    15: 0.005,
-};
-
-// 3. Winner Level Income (15% total from team wins)
-const WINNER_LEVEL_RATES = {
-    1: 0.05,      // Level 1: 5%
-    2: 0.02,      // Level 2: 2%
-    3: 0.01,      // Level 3-5: 1%
-    4: 0.01,
-    5: 0.01,
-    6: 0.005,     // Level 6-15: 0.5%
-    7: 0.005,
-    8: 0.005,
-    9: 0.005,
-    10: 0.005,
-    11: 0.005,
-    12: 0.005,
-    13: 0.005,
-    14: 0.005,
-    15: 0.005,
-};
-
-// Calculate unlocked levels based on direct referrals
-const getUnlockedLevels = (directReferrals) => {
-    // Each direct opens ONE level, max 10 directs for all 15 levels
-    if (directReferrals >= 10) return 15;
-    return Math.min(directReferrals, 15);
-};
+// ... rest of the file (removing local copies of rates and logic)
+// (Note: I'll actually just replace the functions to call the distributor)
 
 // Get income structure overview
 router.get('/structure', async (req, res) => {
@@ -266,61 +222,14 @@ router.post('/process-win', auth, async (req, res) => {
 
 // Helper function to process winner level income for uplines
 async function processWinnerLevelIncome(winnerId, winAmount) {
-    try {
-        let currentUser = await User.findById(winnerId);
-        let currentLevel = 1;
-
-        while (currentUser?.referredBy && currentLevel <= 15) {
-            const upline = await User.findById(currentUser.referredBy);
-
-            if (upline && upline.activation?.tier !== 'none') {
-                const unlockedLevels = getUnlockedLevels(upline.referrals?.length || 0);
-
-                if (currentLevel <= unlockedLevels) {
-                    const rate = WINNER_LEVEL_RATES[currentLevel] || 0;
-                    const commission = winAmount * rate;
-
-                    upline.rewardPoints += commission;
-                    await upline.save();
-                }
-            }
-
-            currentUser = upline;
-            currentLevel++;
-        }
-    } catch (error) {
-        console.error('Process winner level income error:', error);
-    }
+    await distributeWinnerCommissions(winnerId, winAmount);
 }
 
 // Process direct level income (called when someone deposits)
 router.post('/process-deposit-commission', auth, async (req, res) => {
     try {
         const { depositAmount } = req.body;
-        const user = await User.findById(req.user.id);
-
-        // Process commissions for uplines
-        let currentUser = user;
-        let currentLevel = 1;
-
-        while (currentUser?.referredBy && currentLevel <= 15) {
-            const upline = await User.findById(currentUser.referredBy);
-
-            if (upline && upline.activation?.tier !== 'none') {
-                const unlockedLevels = getUnlockedLevels(upline.referrals?.length || 0);
-
-                if (currentLevel <= unlockedLevels) {
-                    const rate = DIRECT_LEVEL_RATES[currentLevel] || 0;
-                    const commission = depositAmount * rate;
-
-                    upline.rewardPoints += commission;
-                    await upline.save();
-                }
-            }
-
-            currentUser = upline;
-            currentLevel++;
-        }
+        await distributeDepositCommissions(req.user.id, depositAmount);
 
         res.status(200).json({
             status: 'success',

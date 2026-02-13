@@ -6,7 +6,19 @@ import { Zap, ShieldCheck, Crown, ArrowRight, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
-export function PromoPoster() {
+interface PromoPosterProps {
+    title?: string;
+    description?: string;
+    link?: string;
+    imageUrl?: string;
+}
+
+export function PromoPoster({
+    title = "Become The Protocol Owner",
+    description = "Unlock governance rights, revenue sharing, and elite tier withdrawal limits.",
+    link = "/dashboard",
+    imageUrl
+}: PromoPosterProps) {
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -14,6 +26,12 @@ export function PromoPoster() {
             transition={{ delay: 0.3 }}
             className="relative w-full overflow-hidden rounded-[2rem] bg-black border border-white/10 group"
         >
+            {imageUrl && (
+                <div
+                    className="absolute inset-0 bg-cover bg-center opacity-20"
+                    style={{ backgroundImage: `url(${imageUrl})` }}
+                />
+            )}
             {/* Animated Background Mesh */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.15),transparent_70%)]" />
             <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(0,0,0,0)_40%,rgba(124,58,237,0.1)_50%,rgba(0,0,0,0)_60%)] bg-[length:200%_200%] animate-[shimmer_6s_infinite_linear]" />
@@ -36,11 +54,10 @@ export function PromoPoster() {
                 {/* Main Visual Text */}
                 <div className="space-y-2">
                     <h3 className="text-3xl font-display font-black text-white italic uppercase tracking-tighter leading-none drop-shadow-2xl">
-                        Become The <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400 animate-gradient-x">Protocol Owner</span>
+                        {title}
                     </h3>
                     <p className="text-sm text-white/50 leading-relaxed font-medium">
-                        Unlock governance rights, revenue sharing, and elite tier withdrawal limits.
+                        {description}
                     </p>
                 </div>
 
@@ -62,10 +79,12 @@ export function PromoPoster() {
 
                 {/* Call to Action */}
                 <div className="pt-4">
-                    <Button className="w-full h-12 bg-white text-black hover:bg-purple-50 text-xs font-black uppercase tracking-[0.2em] rounded-xl flex items-center justify-between px-6 group/btn shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(168,85,247,0.4)] transition-all">
-                        <span>Initialize Upgrade</span>
-                        <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
-                    </Button>
+                    <Link href={link}>
+                        <Button className="w-full h-12 bg-white text-black hover:bg-purple-50 text-xs font-black uppercase tracking-[0.2em] rounded-xl flex items-center justify-between px-6 group/btn shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(168,85,247,0.4)] transition-all">
+                            <span>Initialize Upgrade</span>
+                            <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+                        </Button>
+                    </Link>
                 </div>
             </div>
 

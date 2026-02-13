@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { Search, MoreVertical, Shield, Ban, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, MoreVertical, Shield, Ban, CheckCircle, ChevronLeft, ChevronRight, Wallet, Users, Zap, TrendingUp, Activity, Download } from "lucide-react";
 import { adminAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { motion } from "framer-motion";
 
 interface User {
     _id: string;
@@ -22,8 +23,18 @@ interface User {
     role: string;
     isBanned: boolean;
     isActive: boolean;
-    credits: number;
+    credits: number; // Practice Balance
     rewardPoints: number;
+    realBalances?: {
+        totalUnified?: number;
+        cash?: number;
+    };
+    activation?: {
+        tier: string;
+        totalDeposited: number;
+    };
+    referralCode?: string;
+    createdAt: string;
 }
 
 export function UserTable() {
@@ -78,93 +89,186 @@ export function UserTable() {
         }
     };
 
+    const getTierColor = (tier: string) => {
+        switch (tier) {
+            case 'tier2': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+            case 'tier1': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+            default: return 'text-white/30 bg-white/5 border-white/10';
+        }
+    };
+
+    const getTierLabel = (tier: string) => {
+        switch (tier) {
+            case 'tier2': return 'Full Node';
+            case 'tier1': return 'Basic Node';
+            default: return 'Inactive';
+        }
+    };
+
     return (
-        <Card className="bg-white/5 border-white/10 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                    User Management
-                </CardTitle>
-                <div className="relative w-64">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search email or wallet..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pl-8 bg-black/20 border-white/10 text-sm"
-                    />
+        <Card className="bg-gradient-to-br from-black/60 via-black/40 to-black/60 border border-emerald-500/20 backdrop-blur-xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.3)]">
+            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 p-8 border-b border-white/5 bg-white/[0.02]">
+                <div className="space-y-1">
+                    <h3 className="text-xl font-display font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <Users className="h-5 w-5 text-emerald-500" />
+                        User Command Center
+                    </h3>
+                    <p className="text-[10px] text-white/40 uppercase tracking-widest font-medium pl-8">
+                        Global Identity & Asset Governance
+                    </p>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    <div className="relative w-full md:w-80 group">
+                        <div className="absolute inset-0 bg-emerald-500/5 rounded-xl blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity" />
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
+                        <Input
+                            placeholder="SEARCH_USERS..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-12 bg-black/40 border-white/5 focus:border-emerald-500/50 text-xs font-mono h-11 rounded-xl transition-all placeholder:text-white/20"
+                        />
+                    </div>
+                    <Button variant="outline" size="icon" className="h-11 w-11 border-white/5 bg-black/40 hover:bg-white/5 hover:text-emerald-400 transition-colors rounded-xl">
+                        <Download className="h-4 w-4" />
+                    </Button>
                 </div>
             </CardHeader>
-            <CardContent>
-                <div className="rounded-md border border-white/5 overflow-hidden">
+
+            <CardContent className="p-0">
+                <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-white/5 text-muted-foreground uppercase text-[10px] tracking-wider">
+                        <thead className="bg-[#0f0f0f] border-b border-white/5 text-[9px] uppercase font-black tracking-[0.2em] text-white/30">
                             <tr>
-                                <th className="p-4 font-medium">Identity</th>
-                                <th className="p-4 font-medium">Balances</th>
-                                <th className="p-4 font-medium">Status</th>
-                                <th className="p-4 font-medium text-right">Actions</th>
+                                <th className="px-8 py-5">Identity Protocol</th>
+                                <th className="px-8 py-5">Asset Portfolio</th>
+                                <th className="px-8 py-5">Node Status</th>
+                                <th className="px-8 py-5">System Role</th>
+                                <th className="px-8 py-5 text-right">Controls</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5">
+                        <tbody className="divide-y divide-white/[0.03]">
                             {isLoading ? (
-                                <tr>
-                                    <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                                        Loading records...
-                                    </td>
-                                </tr>
+                                Array.from({ length: 5 }).map((_, i) => (
+                                    <tr key={i} className="animate-pulse">
+                                        <td colSpan={5} className="px-8 py-6">
+                                            <div className="h-10 bg-white/[0.02] rounded-xl w-full" />
+                                        </td>
+                                    </tr>
+                                ))
                             ) : users.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                                        No users found.
+                                    <td colSpan={5} className="px-8 py-16 text-center text-white/30">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="p-4 rounded-full bg-white/5">
+                                                <Users className="h-6 w-6 text-white/20" />
+                                            </div>
+                                            <span className="text-[10px] uppercase tracking-widest font-medium">No identities found</span>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
                                 users.map((user) => (
-                                    <tr key={user._id} className="hover:bg-white/5 transition-colors">
-                                        <td className="p-4">
-                                            <div className="font-medium text-white">{user.email || "No Email"}</div>
-                                            <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                                                {user.walletAddress || "No Wallet Linked"}
+                                    <tr key={user._id} className="group hover:bg-white/[0.02] transition-colors relative">
+                                        <td className="px-8 py-5">
+                                            <div className="flex items-center gap-4">
+                                                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 flex items-center justify-center text-xs font-black text-white/50 group-hover:border-emerald-500/30 group-hover:text-emerald-500 transition-colors">
+                                                    {user.email?.[0]?.toUpperCase() || "U"}
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold text-white text-sm group-hover:text-emerald-400 transition-colors">{user.email || "No Email"}</div>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-white/40 font-mono border border-white/5">
+                                                            {user.walletAddress ? `${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}` : "No Wallet"}
+                                                        </span>
+                                                        {user.referralCode && (
+                                                            <span className="text-[10px] bg-emerald-500/5 text-emerald-500 px-1.5 py-0.5 rounded font-mono uppercase border border-emerald-500/10">
+                                                                REF: {user.referralCode}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </td>
-                                        <td className="p-4">
-                                            <div className="text-emerald-400 font-mono font-medium">
-                                                {user.rewardPoints} SC
-                                            </div>
-                                            <div className="text-xs text-muted-foreground font-mono">
-                                                {user.credits} GC
+                                        <td className="px-8 py-5">
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1 rounded bg-amber-500/10 text-amber-500">
+                                                        <Wallet className="h-3 w-3" />
+                                                    </div>
+                                                    <span className="text-amber-500 font-mono font-bold text-sm">
+                                                        {(user.realBalances?.cash || 0).toFixed(2)} USDT
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1 rounded bg-emerald-500/10 text-emerald-500">
+                                                        <Zap className="h-3 w-3" />
+                                                    </div>
+                                                    <span className="text-emerald-500/70 font-mono text-xs">
+                                                        {user.credits} Practice
+                                                    </span>
+                                                </div>
                                             </div>
                                         </td>
-                                        <td className="p-4">
-                                            <div className="flex items-center gap-2">
+                                        <td className="px-8 py-5">
+                                            <div className="flex flex-col gap-1.5">
                                                 <span className={cn(
-                                                    "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                                                    user.isBanned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"
+                                                    "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider w-fit border shadow-sm",
+                                                    getTierColor(user.activation?.tier || 'none')
                                                 )}>
-                                                    {user.isBanned ? "Banned" : "Active"}
+                                                    {getTierLabel(user.activation?.tier || 'none')}
                                                 </span>
+                                                {user.activation?.totalDeposited ? (
+                                                    <span className="text-[10px] text-white/30 font-mono pl-1 flex items-center gap-1">
+                                                        <TrendingUp className="h-2.5 w-2.5" />
+                                                        Vol: ${user.activation.totalDeposited}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                        <td className="px-8 py-5">
+                                            <div className="flex items-center gap-2">
+                                                <div className={cn(
+                                                    "w-1.5 h-1.5 rounded-full animate-pulse",
+                                                    user.isBanned ? "bg-red-500" : "bg-emerald-500"
+                                                )} />
                                                 <span className={cn(
-                                                    "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                                                    user.role === 'admin' ? "bg-purple-500/20 text-purple-400" : "bg-blue-500/20 text-blue-400"
+                                                    "text-xs font-bold uppercase tracking-wide",
+                                                    user.role === 'admin' ? "text-purple-400" : "text-white/60"
                                                 )}>
                                                     {user.role}
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="p-4 text-right">
+                                        <td className="px-8 py-5 text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-colors">
                                                         <MoreVertical className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="bg-[#1a1a1a] border-white/10 text-white">
-                                                    <DropdownMenuItem onClick={() => handleBan(user._id, user.isBanned)}>
-                                                        {user.isBanned ? <CheckCircle className="mr-2 h-4 w-4 text-green-400" /> : <Ban className="mr-2 h-4 w-4 text-red-400" />}
-                                                        {user.isBanned ? "Unban User" : "Ban User"}
+                                                <DropdownMenuContent align="end" className="bg-[#1a1a1a]/95 backdrop-blur-xl border-white/10 text-white min-w-[200px] p-2 rounded-xl shadow-2xl">
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleBan(user._id, user.isBanned)}
+                                                        className="hover:bg-white/5 focus:bg-white/5 cursor-pointer rounded-lg p-2.5 text-xs font-bold uppercase tracking-wide transition-colors"
+                                                    >
+                                                        {user.isBanned ? (
+                                                            <>
+                                                                <CheckCircle className="mr-2 h-4 w-4 text-emerald-500" />
+                                                                <span className="text-emerald-500">Unban User</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Ban className="mr-2 h-4 w-4 text-red-500" />
+                                                                <span className="text-red-500">Ban User</span>
+                                                            </>
+                                                        )}
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleRole(user._id, user.role === 'admin' ? 'player' : 'admin')}>
-                                                        <Shield className="mr-2 h-4 w-4 text-purple-400" />
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleRole(user._id, user.role === 'admin' ? 'player' : 'admin')}
+                                                        className="hover:bg-white/5 focus:bg-white/5 cursor-pointer rounded-lg p-2.5 text-xs font-bold uppercase tracking-wide mt-1 transition-colors"
+                                                    >
+                                                        <Shield className="mr-2 h-4 w-4 text-purple-500" />
                                                         {user.role === 'admin' ? "Demote to Player" : "Promote to Admin"}
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
@@ -178,27 +282,29 @@ export function UserTable() {
                 </div>
 
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between mt-4">
+                    <div className="flex items-center justify-between p-6 border-t border-white/5 bg-white/[0.01]">
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setPage(p => Math.max(1, p - 1))}
                             disabled={page === 1}
-                            className="text-xs bg-transparent border-white/10 hover:bg-white/5"
+                            className="text-xs bg-black/40 border-white/10 hover:bg-white/5 h-9 px-4 rounded-xl font-mono uppercase transition-all hover:border-emerald-500/30"
                         >
-                            <ChevronLeft className="h-3 w-3 mr-1" /> Previous
+                            <ChevronLeft className="h-3 w-3 mr-2" /> Previous
                         </Button>
-                        <span className="text-xs text-muted-foreground">
-                            Page {page} of {totalPages}
-                        </span>
+                        <div className="px-4 py-1.5 rounded-lg bg-white/5 border border-white/5">
+                            <span className="text-[10px] text-white/40 uppercase tracking-widest font-black">
+                                Page <span className="text-white">{page}</span> of {totalPages}
+                            </span>
+                        </div>
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                             disabled={page === totalPages}
-                            className="text-xs bg-transparent border-white/10 hover:bg-white/5"
+                            className="text-xs bg-black/40 border-white/10 hover:bg-white/5 h-9 px-4 rounded-xl font-mono uppercase transition-all hover:border-emerald-500/30"
                         >
-                            Next <ChevronRight className="h-3 w-3 ml-1" />
+                            Next <ChevronRight className="h-3 w-3 ml-2" />
                         </Button>
                     </div>
                 )}

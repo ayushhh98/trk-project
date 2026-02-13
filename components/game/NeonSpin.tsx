@@ -138,7 +138,7 @@ export function NeonSpin() {
                         {/* The Wheel */}
                         <motion.div
                             animate={{ rotate: rotation }}
-                            transition={{ duration: 4, ease: [0.12, 0, 0.39, 0] }}
+                            transition={{ duration: 4, ease: [0.2, 0.8, 0.2, 1] }}
                             className="relative h-80 w-80 md:h-[400px] md:w-[400px] rounded-full border-8 border-white/5 bg-black overflow-hidden shadow-[0_0_100px_rgba(168,85,247,0.1)]"
                         >
                             {SEGMENTS.map((s, i) => (

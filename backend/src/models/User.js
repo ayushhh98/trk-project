@@ -98,6 +98,19 @@ const userSchema = new mongoose.Schema({
         enum: ['none', 'starter', 'premium', 'vip'],
         default: 'none'
     },
+    // Unified real balances (Sweepstakes + On-chain compatible)
+    realBalances: {
+        cash: { type: Number, default: 0 },
+        game: { type: Number, default: 0 },
+        cashback: { type: Number, default: 0 },
+        lucky: { type: Number, default: 0 },
+        directLevel: { type: Number, default: 0 },
+        winners: { type: Number, default: 0 },
+        roiOnRoi: { type: Number, default: 0 },
+        club: { type: Number, default: 0 },
+        walletBalance: { type: Number, default: 0 },
+        luckyDrawWallet: { type: Number, default: 0 }
+    },
     // Legacy fields - kept for compatibility but deprecated
     practiceBalance: { type: Number, default: 100 },
     practiceExpiry: { type: Date, default: null },
@@ -106,6 +119,7 @@ const userSchema = new mongoose.Schema({
     gamesPlayed: { type: Number, default: 0 },
     gamesWon: { type: Number, default: 0 },
     totalRewardsWon: { type: Number, default: 0 }, // Replaces totalWinnings
+    totalWinnings: { type: Number, default: 0 },
 
     gameStats: {
         numberGuess: {
@@ -135,12 +149,41 @@ const userSchema = new mongoose.Schema({
     referralCode: { type: String, unique: true },
     referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     referrals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    teamStats: {
+        totalMembers: { type: Number, default: 0 },
+        activeMembers: { type: Number, default: 0 },
+        totalCommission: { type: Number, default: 0 },
+        totalTeamVolume: { type: Number, default: 0 },
+        strongLegVolume: { type: Number, default: 0 },
+        otherLegsVolume: { type: Number, default: 0 },
+        branchVolumes: { type: Map, of: Number, default: {} }
+    },
+    cashbackStats: {
+        totalNetLoss: { type: Number, default: 0 },
+        totalRecovered: { type: Number, default: 0 },
+        pendingCashback: { type: Number, default: 0 },
+        todayCashback: { type: Number, default: 0 },
+        lastClaimedAt: { type: Date, default: null }
+    },
+    clubRank: { type: String, default: 'Rank 0' },
 
     isRegisteredOnChain: { type: Boolean, default: false },
     isBanned: { type: Boolean, default: false },
     banReason: { type: String, default: null },
     bannedAt: { type: Date, default: null },
     bannedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    activation: {
+        tier: { type: String, enum: ['none', 'tier1', 'tier2'], default: 'none' },
+        totalDeposited: { type: Number, default: 0 },
+        tier1ActivatedAt: { type: Date, default: null },
+        tier2ActivatedAt: { type: Date, default: null },
+        canWithdrawDirectLevel: { type: Boolean, default: false },
+        canWithdrawWinners: { type: Boolean, default: false },
+        canTransferPractice: { type: Boolean, default: false },
+        canWithdrawAll: { type: Boolean, default: false },
+        cashbackActive: { type: Boolean, default: false },
+        allStreamsUnlocked: { type: Boolean, default: false }
+    },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now },
@@ -190,20 +233,142 @@ userSchema.methods.updateActivationTier = function (tier1Threshold = 10, tier2Th
     return this.activation;
 };
 
+const normalizeRealBalances = (user) => {
+    if (!user.realBalances) user.realBalances = {};
+    const defaults = {
+        cash: 0,
+        game: 0,
+        cashback: 0,
+        lucky: 0,
+        directLevel: 0,
+        winners: 0,
+        roiOnRoi: 0,
+        club: 0,
+        walletBalance: 0,
+        luckyDrawWallet: 0
+    };
+    for (const key of Object.keys(defaults)) {
+        if (typeof user.realBalances[key] !== 'number') {
+            user.realBalances[key] = defaults[key];
+        }
+    }
+};
+
+const normalizeCashbackStats = (user) => {
+    if (!user.cashbackStats) user.cashbackStats = {};
+    const defaults = {
+        totalNetLoss: 0,
+        totalRecovered: 0,
+        pendingCashback: 0,
+        todayCashback: 0
+    };
+    for (const key of Object.keys(defaults)) {
+        if (typeof user.cashbackStats[key] !== 'number') {
+            user.cashbackStats[key] = defaults[key];
+        }
+    }
+    if (user.cashbackStats.lastClaimedAt) {
+        const ts = new Date(user.cashbackStats.lastClaimedAt).getTime();
+        if (Number.isNaN(ts)) {
+            user.cashbackStats.lastClaimedAt = null;
+        }
+    } else {
+        user.cashbackStats.lastClaimedAt = null;
+    }
+};
+
+const normalizeTeamStats = (user) => {
+    if (!user.teamStats) user.teamStats = {};
+    const defaults = {
+        totalMembers: 0,
+        activeMembers: 0,
+        totalCommission: 0,
+        totalTeamVolume: 0,
+        strongLegVolume: 0,
+        otherLegsVolume: 0
+    };
+    for (const key of Object.keys(defaults)) {
+        if (typeof user.teamStats[key] !== 'number') {
+            user.teamStats[key] = defaults[key];
+        }
+    }
+    if (!user.teamStats.branchVolumes) {
+        user.teamStats.branchVolumes = new Map();
+    }
+};
+
+const buildWalletReferralBase = (walletAddress, length) => {
+    if (!walletAddress) return '';
+    const clean = walletAddress.toString().replace(/^0x/i, '');
+    return clean.slice(-length).toUpperCase();
+};
+
+const pickStartDigit = (walletAddress) => {
+    if (!walletAddress) return Math.floor(Math.random() * 10);
+    const clean = walletAddress.toString().replace(/^0x/i, '');
+    const last = clean.slice(-1);
+    const parsed = parseInt(last, 16);
+    if (Number.isNaN(parsed)) return Math.floor(Math.random() * 10);
+    return parsed % 10;
+};
+
+const generateUniqueWalletReferralCode = async (user) => {
+    if (!user?.walletAddress) return null;
+    const Model = user.constructor;
+    const startDigit = pickStartDigit(user.walletAddress);
+    const lengths = [6, 7, 8];
+
+    for (const length of lengths) {
+        const base = buildWalletReferralBase(user.walletAddress, length);
+        for (let offset = 0; offset < 10; offset += 1) {
+            const digit = (startDigit + offset) % 10;
+            const code = `${base}${digit}`;
+            const exists = await Model.exists({ referralCode: code });
+            if (!exists) return code;
+        }
+    }
+
+    // Fallback: extend with two digits to guarantee uniqueness
+    const base = buildWalletReferralBase(user.walletAddress, 8);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        const suffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+        const code = `${base}${suffix}`;
+        const exists = await Model.exists({ referralCode: code });
+        if (!exists) return code;
+    }
+
+    return null;
+};
+
 // Password hashing middleware
 userSchema.pre('save', async function (next) {
+    normalizeRealBalances(this);
+    normalizeCashbackStats(this);
+    normalizeTeamStats(this);
+
     if (this.isModified('password')) {
         this.password = await bcrypt.hash(this.password, 10);
     }
 
-    if (!this.referralCode && this.walletAddress) {
-        this.referralCode = this.walletAddress.slice(2, 8).toUpperCase();
+    if (this.walletAddress) {
+        const legacyCode = this.walletAddress.slice(2, 8).toUpperCase();
+        const shouldRefreshCode = !this.referralCode || this.referralCode === legacyCode;
+        if (shouldRefreshCode) {
+            const code = await generateUniqueWalletReferralCode(this);
+            if (code) this.referralCode = code;
+        }
     } else if (!this.referralCode && this.email) {
         this.referralCode = this.email.split('@')[0].slice(0, 6).toUpperCase() + Math.floor(Math.random() * 1000).toString();
     }
 
     this.updatedAt = Date.now();
     next();
+});
+
+userSchema.post('init', function (doc) {
+    normalizeRealBalances(doc);
+    normalizeCashbackStats(doc);
+    normalizeTeamStats(doc);
 });
 
 // Compare password method

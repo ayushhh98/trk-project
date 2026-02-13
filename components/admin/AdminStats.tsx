@@ -48,21 +48,25 @@ export function AdminStats() {
     useEffect(() => {
         fetchData();
 
+        const handleStatsUpdate = (data: any) => {
+            setAnalytics(prev => ({ ...prev, ...data }));
+        };
+        const handleUserRegistered = () => {
+            setAnalytics(prev => prev ? ({ ...prev, totalUsers: prev.totalUsers + 1 }) : null);
+        };
+
         // Real-time listeners
         if (socket) {
-            socket.on("admin_stats_update", (data: any) => {
-                setAnalytics(prev => ({ ...prev, ...data }));
-            });
-
-            socket.on("user_registered", () => {
-                setAnalytics(prev => prev ? ({ ...prev, totalUsers: prev.totalUsers + 1 }) : null);
-            });
+            socket.on("admin:stats_update", handleStatsUpdate);
+            socket.on("admin_stats_update", handleStatsUpdate);
+            socket.on("user_registered", handleUserRegistered);
         }
 
         return () => {
             if (socket) {
-                socket.off("admin_stats_update");
-                socket.off("user_registered");
+                socket.off("admin:stats_update", handleStatsUpdate);
+                socket.off("admin_stats_update", handleStatsUpdate);
+                socket.off("user_registered", handleUserRegistered);
             }
         };
     }, [socket]);
@@ -121,27 +125,30 @@ export function AdminStats() {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {stats.map((stat, index) => (
-                <Card key={index} className="bg-white/5 border-white/10 backdrop-blur-sm overflow-hidden relative">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                        <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                <Card key={index} className="group bg-[#0a0a0a]/50 border-white/5 backdrop-blur-xl overflow-hidden relative hover:border-white/10 transition-all duration-500 rounded-3xl">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
+                        <CardTitle className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">
                             {stat.title}
                         </CardTitle>
-                        <div className={cn("p-2 rounded-full", stat.bg)}>
+                        <div className={cn("p-2.5 rounded-xl border border-white/5 group-hover:scale-110 transition-transform duration-500", stat.bg)}>
                             <stat.icon className={cn("h-4 w-4", stat.color)} />
                         </div>
                     </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold font-mono text-white">
+                    <CardContent className="relative z-10">
+                        <div className="text-3xl font-black font-mono text-white tracking-tighter group-hover:text-primary transition-colors duration-500">
                             {stat.value}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            {stat.sub}
-                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                            <div className={cn("w-1 h-1 rounded-full animate-pulse", stat.color.replace('text-', 'bg-'))} />
+                            <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest leading-none">
+                                {stat.sub}
+                            </p>
+                        </div>
                     </CardContent>
 
                     {/* Decorative gradient */}
                     <div className={cn(
-                        "absolute -bottom-4 -right-4 w-24 h-24 rounded-full blur-3xl opacity-20 pointer-events-none",
+                        "absolute -bottom-10 -right-10 w-32 h-32 rounded-full blur-[60px] opacity-10 group-hover:opacity-20 transition-opacity duration-700 pointer-events-none",
                         stat.color.replace('text-', 'bg-')
                     )} />
                 </Card>

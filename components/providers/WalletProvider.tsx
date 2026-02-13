@@ -182,6 +182,18 @@ const normalizeWalletList = (items: unknown[]) => {
     return next.slice(0, MAX_RECENT_WALLETS);
 };
 
+const mapGameVariant = (variant?: string): GameHistoryItem['gameType'] => {
+    if (!variant) return 'dice';
+    const v = variant.toLowerCase();
+    if (v === 'spin-wheel' || v === 'spin') return 'spin';
+    if (v === 'matrix' || v === 'probability-matrix') return 'matrix';
+    if (v === 'crash') return 'crash';
+    if (v === 'mines') return 'mines';
+    if (v === 'plinko') return 'plinko';
+    if (v === 'guess' || v === 'number-guess') return 'dice';
+    return 'dice';
+};
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
     const { address: wagmiAddress, isConnected: isWagmiConnected, chainId } = useAccount();
     const { connectors, connectAsync } = useConnect();
@@ -472,7 +484,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                                     won: g.isWin,
                                     payout: g.payout,
                                     timestamp: g.createdAt,
-                                    gameType: g.gameVariant || 'dice',
+                                    gameType: mapGameVariant(g.gameVariant),
                                     roundId: g.roundId
                                 }));
                                 setGameHistory(mappedHistory);
@@ -581,20 +593,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const effectiveUser = user || storedUser;
 
         // If we have a token and user, check if we need to do anything
-            if (effectiveToken && effectiveUser) {
-                // If the valid session matches the connected wallet, we are good.
-                if (effectiveUser.walletAddress?.toLowerCase() === wagmiAddress.toLowerCase()) {
+        if (effectiveToken && effectiveUser) {
+            // If the valid session matches the connected wallet, we can reuse it.
+            if (effectiveUser.walletAddress?.toLowerCase() === wagmiAddress.toLowerCase()) {
+                if (!user) {
+                    setUser(effectiveUser);
+                    setToken(effectiveToken);
+
+                    // Also restore balance states to avoid UI glitches/errors
+                    if (effectiveUser.practiceBalance !== undefined) {
+                        setPracticeBalance(effectiveUser.practiceBalance.toString());
+                    }
+                    if (effectiveUser.realBalances) {
+                        setRealBalances({
+                            ...effectiveUser.realBalances,
+                            totalUnified: (effectiveUser.realBalances.cash || 0) + (effectiveUser.realBalances.game || 0)
+                        });
+                    }
+                }
+
+                // If the user explicitly clicked connect (e.g., admin login), re-verify to refresh role/session.
+                if (!connectRequested && !isSwitchingWallet) {
                     setWalletConnectRequested(false);
                     return;
                 }
-
-            // CRITICAL FIX: If we are logged in via Email (or another wallet), 
-            // DO NOT auto-attempt to login with the new wallet and overwrite/fail the session.
-            // Just return and let the user decide if they want to Link or Switch accounts manually.
-                console.log("Valid session exists for different user/address. Skipping auto-wallet-login.");
-                setWalletConnectRequested(false);
-                return;
+            } else {
+                // If switching wallet, we proceed to signature.
+                // Otherwise, if connect wasn't explicitly requested, we don't auto-switch.
+                if (!isSwitchingWallet && !connectRequested) return;
             }
+        } else {
+            // No session. Only auto-login if the user explicitly clicked connect
+            if (!connectRequested && !isSwitchingWallet) return;
+        }
 
         loginInProgressRef.current = true;
         const toastId = toast.loading("Establishing Secure Uplink...");
@@ -688,8 +719,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 // instead of a hard location reload if we're already on a dashboard-like page,
                 // otherwise we navigate.
                 const path = window.location.pathname;
-                if (path === '/' || path === '/auth') {
-                    router.push('/dashboard');
+                const isAdminRole = userData?.role === 'admin' || userData?.role === 'superadmin';
+                if (path.startsWith('/admin')) {
+                    if (isAdminRole) {
+                        router.push('/admin');
+                    } else {
+                        if (typeof window !== "undefined") {
+                            sessionStorage.setItem("trk_home_override", "1");
+                        }
+                        router.push('/');
+                    }
+                } else if (path === '/' || path === '/auth') {
+                    if (isAdminRole) {
+                        router.push('/admin');
+                    } else {
+                        if (typeof window !== "undefined") {
+                            sessionStorage.setItem("trk_home_override", "1");
+                        }
+                        router.push('/');
+                    }
                 } else {
                     refreshUser();
                 }
@@ -785,15 +833,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setWalletConnectRequested(true);
 
         try {
-            // Already connected? Trigger auth directly.
-            if (isWagmiConnected && wagmiAddress) {
-                await login();
-                return;
-            }
-
             // WalletConnect / Modal Fallback
             if (walletType === 'Other' || walletType === 'WalletConnect') {
                 await openWeb3Modal();
+                // If a wallet is already connected, trigger auth explicitly.
+                if (wagmiConnectedRef.current && wagmiAddressRef.current) {
+                    await login();
+                }
+                return;
+            }
+
+            // Already connected? Trigger auth directly.
+            if (isWagmiConnected && wagmiAddress) {
+                await login();
                 return;
             }
 
@@ -964,7 +1016,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
 
     const refreshUser = async () => {
-        if (!token) return;
+        const activeToken = token || getToken();
+        if (!activeToken) return;
         try {
             // 1. Sync backend session
             const response = await userAPI.getMe();
@@ -1001,7 +1054,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
             const limit = 20;
             const historyRes = await fetch(`${apiBase}/api/game/history?limit=${limit}&page=1`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 'Authorization': `Bearer ${activeToken}` }
             }).then(r => r.json());
 
             if (historyRes.status === 'success' && Array.isArray(historyRes.data.games)) {
@@ -1014,7 +1067,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     won: g.isWin,
                     payout: g.payout,
                     timestamp: g.createdAt,
-                    gameType: 'dice', // Default for now, or g.gameVariant if available
+                    gameType: mapGameVariant(g.gameVariant),
                     roundId: g.roundId
                 }));
                 setGameHistory(mappedHistory);
@@ -1049,16 +1102,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     won: g.isWin,
                     payout: g.payout,
                     timestamp: g.createdAt,
-                    gameType: 'dice',
+                    gameType: mapGameVariant(g.gameVariant),
                     roundId: g.roundId
                 }));
 
-                setGameHistory(prev => [...prev, ...mappedHistory]);
+                setGameHistory(prev => {
+                    const next = [...prev, ...mappedHistory];
+                    const total = historyRes.data.pagination.total;
+                    setHasMoreHistory(next.length < total);
+                    return next;
+                });
                 setHistoryPage(nextPage);
-
-                // Check if more pages exist
-                const total = historyRes.data.pagination.total;
-                setHasMoreHistory((gameHistory.length + mappedHistory.length) < total);
             }
         } catch (e) {
             console.error("Failed to load more history", e);
@@ -1068,11 +1122,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
 
     const placeEntry = async (amount: number, prediction: any, gameType: GameHistoryItem['gameType'] = 'dice') => {
-        if (amount < 0.5) {
-            toast.error("Minimum entry is 0.5 GC");
+        if (!token || !user) {
+            toast.error("Connection required", { description: "Please connect your wallet to play." });
+            await openWeb3Modal();
+            return { won: false, hash: "AUTH_REQUIRED", luckyNumber: null };
+        }
+        if (amount < 1.0) {
+            toast.error("Minimum entry is 1.0 GC");
             return { won: false, hash: "INVALID_BET", luckyNumber: null };
         }
-        if (!token) throw new Error("Authentication required");
 
         // Validation for client-side balance check (optional, backend checks too)
         if (parseFloat(practiceBalance) < amount) {
@@ -1144,7 +1202,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
 
     const participate = async (amount: number, prediction: any, gameType: GameHistoryItem['gameType'] = 'dice') => {
-        if (!token) throw new Error("Authentication required");
+        if (!token || !user) {
+            toast.error("Connection required", { description: "Please connect your wallet to play." });
+            await openWeb3Modal();
+            return { won: false, payout: 0, hash: "AUTH_REQUIRED", luckyNumber: null };
+        }
         if (!hasRealAccess) {
             toast.error("Real money mode locked", {
                 description: "Add funds to unlock real gameplay."
@@ -1157,8 +1219,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             });
             throw new Error("Insufficient balance");
         }
-        if (amount < 0.5) {
-            toast.error("Minimum entry is 0.5 SC");
+        if (amount < 1.0) {
+            toast.error("Minimum entry is 1.0 SC");
             return { won: false, payout: 0, hash: "INVALID_BET", luckyNumber: null };
         }
 
@@ -1193,6 +1255,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 toast.dismiss(toastId);
                 if (isWin) toast.success(`SYSTEM WIN! +${payout} SC [Result: ${luckyNumber}]`);
                 else toast.info(`Bet Lost. [Result: ${luckyNumber}]`);
+
+                const historyItem: GameHistoryItem = {
+                    id: id || Math.random().toString(36).slice(2, 9),
+                    hash: (hash || id || "INTERNAL_TX").toString(),
+                    amount,
+                    prediction,
+                    won: isWin,
+                    payout,
+                    timestamp: new Date().toISOString(),
+                    gameType
+                };
+                setGameHistory((prev) => [historyItem, ...prev].slice(0, 50));
 
                 refreshUser(); // Sync balance
                 return { won: isWin, payout, hash: (hash || id || "INTERNAL_TX").toString(), luckyNumber };
@@ -1231,7 +1305,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
 
     const realEntry = async (amount: number, prediction: number | string, gameType: GameHistoryItem['gameType'] = 'dice') => {
-        if (!user || !wagmiAddress) throw new Error("Connection required for on-chain betting");
+        if (!token || !user || !wagmiAddress) {
+            toast.error("Connection required", { description: "Please connect your wallet to play." });
+            await openWeb3Modal();
+            throw new Error("Connection required for on-chain betting");
+        }
 
         // Check Network
         if (chainId !== bsc.id && chainId !== bscTestnet.id) {
@@ -1242,7 +1320,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
         const toastId = toast.loading("Initializing Quantum Entry Core...");
         try {
-            if (amount < 0.5) throw new Error("Minimum entry is 0.5 SC");
+            if (amount < 1.0) throw new Error("Minimum entry is 1.0 SC");
 
             const amountBig = parseUnits(amount.toString(), 18);
 
@@ -1326,84 +1404,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const purchaseMembership = async (amount: number, packageType?: 'starter' | 'premium' | 'vip') => {
-        if (!user) throw new Error("User not logged in");
-        const toastId = toast.loading("Initiating Membership Purchase...");
 
-        try {
-            const amountBig = parseUnits(amount.toString(), 18);
-
-            // 1. Approve USDT
-            toast.loading("Requesting USDT Approval...", { id: toastId });
-            await writeContractAsync({
-                address: addresses.USDT as `0x${string}`,
-                abi: ERC20ABI,
-                functionName: 'approve',
-                args: [addresses.GAME as `0x${string}`, amountBig],
-            });
-
-            // 2. Deposit
-            toast.loading("Confirming Deposit...", { id: toastId });
-            const tx = await writeContractAsync({
-                address: addresses.GAME as `0x${string}`,
-                abi: TRKGameABI,
-                functionName: 'depositCashGame',
-                args: [amountBig],
-            });
-
-            try {
-                await depositAPI.deposit(amount, tx);
-            } catch (syncErr) {
-                console.warn("Backend deposit sync failed:", syncErr);
-            }
-
-            // If this deposit matches a membership package, award GC/SC instantly
-            const inferPackageType = () => {
-                if (packageType) return packageType;
-                const rounded = Math.round(amount * 100) / 100;
-                if (Math.abs(rounded - 10) < 0.01) return 'starter';
-                if (Math.abs(rounded - 50) < 0.01) return 'premium';
-                if (Math.abs(rounded - 100) < 0.01) return 'vip';
-                return null;
-            };
-
-            const resolvedPackage = inferPackageType();
-            let packageAwarded = false;
-            if (resolvedPackage) {
-                try {
-                    const pkgRes = await packagesAPI.purchase(resolvedPackage, tx);
-                    if (pkgRes?.status === 'success') {
-                        const newBalance = pkgRes.data?.newBalance;
-                        const nextMembership = pkgRes.data?.membershipLevel;
-                        if (newBalance && user) {
-                            const updatedUser = {
-                                ...user,
-                                credits: newBalance.credits ?? user.credits,
-                                rewardPoints: newBalance.rewardPoints ?? user.rewardPoints,
-                                membershipLevel: nextMembership || user.membershipLevel
-                            };
-                            setUser(updatedUser);
-                            setStoredUser(updatedUser);
-                        }
-                        packageAwarded = true;
-                    } else {
-                        toast.warning(pkgRes?.message || "Package reward sync failed");
-                    }
-                } catch (pkgErr: any) {
-                    console.warn("Package award failed:", pkgErr);
-                    toast.warning(pkgErr?.message || "Package reward sync failed");
-                }
-            }
-
-            toast.success(packageAwarded ? "Membership acquired. GC/SC credits added." : "Membership acquired!", { id: toastId });
-            refreshUser();
-            return tx;
-        } catch (error: any) {
-            console.error("Deposit failed:", error);
-            toast.error(error.message || "Deposit failed", { id: toastId });
-            throw error;
-        }
-    };
 
     const buyLuckyDrawTickets = async (quantity: number) => {
         if (!user) throw new Error("User not logged in");
@@ -1785,14 +1786,84 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
 
     const deposit = async (amount: number) => {
+        if (!wagmiAddress || !publicClient) {
+            toast.error("Wallet not connected");
+            return;
+        }
+
         const toastId = toast.loading(`Initializing Deposit for ${amount} USDT...`);
         try {
-            // This is usually handled by the DepositModal calling the contract
-            // But we can add a helper logic here if needed for tracking
-            console.log("Deposit request processed for:", amount);
-            toast.success("Deposit Protocol Initialized.", { id: toastId });
+            const amountBig = parseUnits(amount.toString(), 18);
+            const usdtAddress = addresses.USDT as `0x${string}`;
+            const gameAddress = addresses.GAME as `0x${string}`;
+
+            // 1. Validation
+            if (!usdtAddress || !gameAddress || usdtAddress === '0x0000000000000000000000000000000000000000') {
+                throw new Error("System contracts not loaded. Please switch network or refresh.");
+            }
+
+            // Check Gas (Native Token Balance)
+            if (balanceData?.value === 0n) {
+                const errorMsg = "Insufficient BNB for Network Fees (Gas). Please get free BNB from the Dashboard header.";
+                toast.error(errorMsg, { duration: 5000 });
+                throw new Error(errorMsg);
+            }
+
+            // 2. Check Allowance
+            const allowance = await publicClient.readContract({
+                address: usdtAddress,
+                abi: ERC20ABI,
+                functionName: 'allowance',
+                args: [wagmiAddress as `0x${string}`, gameAddress]
+            });
+
+            if (allowance < amountBig) {
+                toast.loading("Requesting USDT Approval...", { id: toastId });
+                const approveTx = await writeContractAsync({
+                    address: usdtAddress,
+                    abi: ERC20ABI,
+                    functionName: 'approve',
+                    args: [gameAddress, amountBig]
+                });
+                toast.loading("Approval Pending...", { id: toastId });
+                await publicClient.waitForTransactionReceipt({ hash: approveTx });
+                toast.success("USDT Approved!", { id: toastId });
+            }
+
+            // 3. Deposit to Game Contract
+            toast.loading("Depositing to Game Contract... Confirm in Wallet.", { id: toastId });
+            const depositTx = await writeContractAsync({
+                address: gameAddress,
+                abi: TRKGameABI,
+                functionName: 'depositCashGame',
+                args: [amountBig]
+            });
+            console.log(`[Deposit] Tx Hash: ${depositTx}`);
+
+            toast.loading("Waiting for confirmation...", { id: toastId });
+            await publicClient.waitForTransactionReceipt({ hash: depositTx });
+
+            // Small delay to allow backend RPC to sync
+            await new Promise(r => setTimeout(r, 2000));
+
+            // 4. Sync with Backend
+            toast.loading("Syncing with Dashboard...", { id: toastId });
+            const res = await depositAPI.deposit(amount, depositTx);
+
+            if (res.status === 'success') {
+                toast.success(`Successfully deposited ${amount} USDT`, { id: toastId });
+                await refreshUser();
+            } else {
+                throw new Error(res.message || "Sync failed");
+            }
+
         } catch (err: any) {
-            toast.error("Deposit initialization failed.", { id: toastId });
+            console.error("Deposit failed:", err);
+            if (err.message?.includes("User rejected") || err.name === 'UserRejectedRequestError') {
+                toast.info("Transaction cancelled by user", { id: toastId });
+            } else {
+                toast.error(err.shortMessage || err.message || "Deposit failed", { id: toastId });
+            }
         }
     };
 
@@ -1809,6 +1880,90 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             }
         } catch (err: any) {
             toast.error(err.message || "Withdrawal failed.", { id: toastId });
+        }
+    };
+
+    const purchaseMembership = async (price: number, packageType?: 'starter' | 'premium' | 'vip') => {
+        if (!packageType) {
+            // If called without packageType, it's likely a mistake or legacy call. 
+            // In strict mode, we require it. 
+            // However, to satisfy the interface we allow undefined in signature, but reject runtime.
+            throw new Error("Invalid purchase: Package type is required.");
+        }
+
+        if (!wagmiAddress || !publicClient) {
+            toast.error("Wallet not connected");
+            throw new Error("Wallet not connected");
+        }
+
+        const toastId = toast.loading("Initializing Package Purchase...");
+
+        try {
+            // 1. Validation
+            const usdtAddress = addresses.USDT as `0x${string}`;
+            const targetAddress = addresses.GAME as `0x${string}`;
+
+            if (!usdtAddress || !targetAddress || usdtAddress === '0x0000000000000000000000000000000000000000') {
+                throw new Error("System contracts not loaded. Please switch network or refresh.");
+            }
+
+            // Check Gas (Native Token Balance)
+            if (balanceData?.value === 0n) {
+                const errorMsg = "Insufficient BNB for Network Fees (Gas).";
+                toast.error(errorMsg, {
+                    duration: 10000,
+                    action: {
+                        label: "Get Free BNB",
+                        onClick: () => window.open("https://testnet.binance.org/faucet-smart", "_blank")
+                    }
+                });
+                throw new Error(errorMsg);
+            }
+
+            const amountBig = parseUnits(price.toString(), 18);
+
+            console.log(`[Membership] Initiating transfer: ${price} USDT to ${targetAddress}`);
+
+            toast.loading("Processing Payment... Please confirm in Wallet.", { id: toastId });
+
+            // 2. Transfer USDT (No approval needed for direct transfer)
+            // Explicitly typing arguments for safety
+            const transferTx = await writeContractAsync({
+                address: usdtAddress,
+                abi: ERC20ABI,
+                functionName: 'transfer',
+                args: [targetAddress, amountBig]
+            });
+
+            console.log(`[Membership] Tx Hash: ${transferTx}`);
+
+            toast.loading("Confirmation Received! Syncing...", { id: toastId });
+            await publicClient.waitForTransactionReceipt({ hash: transferTx });
+
+            // Small delay to allow backend RPC to sync
+            await new Promise(r => setTimeout(r, 2000));
+
+            // 3. Sync with Backend to Award Package
+            toast.loading("Activating Membership...", { id: toastId });
+            const res = await packagesAPI.purchase(packageType, transferTx);
+
+            if (res.status === 'success') {
+                toast.success("Membership Activated! Credits Added.", { id: toastId });
+                await refreshUser();
+                // Return hash for UI handling if needed
+                return transferTx;
+            } else {
+                throw new Error(res.message || "Activation failed");
+            }
+        } catch (err: any) {
+            console.error("Purchase failed:", err);
+            // Handle user rejection specifically
+            if (err.message?.includes("User rejected") || err.name === 'UserRejectedRequestError') {
+                toast.info("Transaction cancelled by user", { id: toastId });
+            } else {
+                toast.error(err.shortMessage || err.message || "Purchase failed", { id: toastId });
+            }
+            throw err;
         }
     };
 
@@ -1892,11 +2047,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 isSwitchingWallet,
                 isWagmiConnected,
                 effectiveToken
-            ])
-            }
+            ])}
         >
             {children}
-        </WalletContext.Provider >
+        </WalletContext.Provider>
     );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useWallet } from "@/components/providers/WalletProvider";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
+import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
     ArrowLeft, Shield, TrendingUp, Users, Zap, Gift,
@@ -12,12 +12,10 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useMemo } from "react";
+import { apiRequest } from "@/lib/api";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useSocket } from "@/components/providers/Web3Provider";
 
-import { useReadContract } from "wagmi";
-import { TRKGameABI } from "@/config/abis";
-import { GAME_CONTRACT_ADDRESS } from "@/config/contracts";
-import { formatUnits } from "viem";
 
 // Cashback Phase Configuration
 const cashbackPhases = [
@@ -43,61 +41,61 @@ const advantages = [
 ];
 
 export default function CashbackPage() {
-    const { address, user, claimLiquiditySync, refreshUser } = useWallet();
+    const { address, refreshUser } = useWallet();
+    const socket = useSocket();
     const [showHistory, setShowHistory] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
 
     const [tickingCashback, setTickingCashback] = useState(0);
-
-    // Fetch live user data from contract
-    const { data: balanceData, isLoading: isBalancesLoading } = useReadContract({
-        address: GAME_CONTRACT_ADDRESS as `0x${string}`,
-        abi: TRKGameABI,
-        functionName: 'getUserBalances',
-        args: [address as `0x${string}`],
-        query: {
-            enabled: !!address && (GAME_CONTRACT_ADDRESS as string) !== "0x0000000000000000000000000000000000000000"
-        }
-    }) as { data: any, isLoading: boolean };
-
-    // Fetch unclaimed rounds
-    const { data: unclaimedRoundsRaw } = useReadContract({
-        address: GAME_CONTRACT_ADDRESS as `0x${string}`,
-        abi: TRKGameABI,
-        functionName: 'getUnclaimedRounds',
-        args: [address as `0x${string}`, true],
-        query: {
-            enabled: !!address && (GAME_CONTRACT_ADDRESS as string) !== "0x0000000000000000000000000000000000000000"
-        }
-    }) as { data: any };
+    const tickerRef = useRef<{ base: number; lastTs: number; rate: number }>({
+        base: 0,
+        lastTs: Date.now(),
+        rate: 0
+    });
 
     // Fetch Cashback Status from API
     const [apiStats, setApiStats] = useState<any>(null);
 
-    useEffect(() => {
-        const fetchCashbackStatus = async () => {
-            try {
-                const res = await fetch('/api/cashback/status', {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    setApiStats(data.data);
-                }
-            } catch (error) {
-                console.error("Failed to fetch cashback status", error);
-            }
-        };
+    const fetchCashbackStatus = useCallback(async () => {
+        if (!address) return;
+        try {
+            const data = await apiRequest('/cashback/status');
+            if (data?.status === 'success') setApiStats(data.data);
+        } catch (error) {
+            console.error("Failed to fetch cashback status", error);
+        }
+    }, [address]);
 
+    useEffect(() => {
         if (address) {
             fetchCashbackStatus();
         }
-    }, [address, isSyncing]);
+    }, [address, fetchCashbackStatus, isSyncing]);
+
+    useEffect(() => {
+        if (!address) return;
+        const interval = setInterval(() => {
+            fetchCashbackStatus();
+        }, 15000);
+        return () => clearInterval(interval);
+    }, [address, fetchCashbackStatus]);
+
+    useEffect(() => {
+        if (!socket) return;
+        const handleNotification = (payload: any) => {
+            if (payload?.type === 'cashback') {
+                fetchCashbackStatus();
+                refreshUser();
+            }
+        };
+        socket.on('notification', handleNotification);
+        return () => {
+            socket.off('notification', handleNotification);
+        };
+    }, [socket, fetchCashbackStatus, refreshUser]);
 
     const stats = useMemo(() => {
-        if (apiStats && balanceData) {
-            const totalDeposit = Number(formatUnits(balanceData[5] || 0n, 18));
-
+        if (apiStats) {
             // Allow API to override contract data for advanced logic not yet on-chain
             return {
                 isActivated: apiStats.isActivated,
@@ -121,37 +119,58 @@ export default function CashbackPage() {
             };
         }
         return null;
-    }, [apiStats, balanceData]);
+    }, [apiStats]);
 
     // Real-time Ticker Logic
     useEffect(() => {
         if (!stats) return;
 
-        // Initial set
-        setTickingCashback(stats.pendingCashback);
+        const ratePerSecond = stats.sustainabilityCycle.hasReachedCap
+            ? 0
+            : (stats.totalLosses * stats.dailyRate * stats.boostMultiplier) / 86400;
 
+        const base = Number.isFinite(stats.pendingCashback) ? stats.pendingCashback : 0;
+        tickerRef.current = {
+            base,
+            lastTs: Date.now(),
+            rate: Number.isFinite(ratePerSecond) ? ratePerSecond : 0
+        };
+
+        setTickingCashback(base);
+
+        const maxClaimable = stats.sustainabilityCycle?.remainingCap ?? Number.MAX_SAFE_INTEGER;
         const interval = setInterval(() => {
-            setTickingCashback(prev => {
-                const drip = 0.00001;
-                return prev + drip;
-            });
-        }, 3000);
+            const { base: start, lastTs, rate } = tickerRef.current;
+            const now = Date.now();
+            const next = start + ((now - lastTs) / 1000) * rate;
+            setTickingCashback(Math.min(next, maxClaimable));
+        }, 1000);
 
         return () => clearInterval(interval);
-    }, [stats]);
+    }, [
+        stats?.pendingCashback,
+        stats?.totalLosses,
+        stats?.dailyRate,
+        stats?.boostMultiplier,
+        stats?.sustainabilityCycle?.hasReachedCap
+    ]);
 
     const handleSync = async () => {
         setIsSyncing(true);
         try {
-            await claimLiquiditySync();
-            await refreshUser();
-            setTickingCashback(0);
+            const res = await apiRequest('/cashback/claim', { method: 'POST' });
+            if (res?.status === 'success') {
+                await refreshUser();
+                await fetchCashbackStatus();
+            }
+        } catch (error) {
+            console.error("Cashback claim failed", error);
         } finally {
             setIsSyncing(false);
         }
     };
 
-    if (isBalancesLoading || !stats) {
+    if (!stats) {
         return (
             <div className="min-h-screen bg-[#050505] flex items-center justify-center">
                 <div className="relative">
@@ -170,6 +189,10 @@ export default function CashbackPage() {
     const remainingLoss = Math.max(0, stats.totalLosses - stats.totalRecovered);
     const dailyCashback = stats.totalLosses * stats.dailyRate * stats.boostMultiplier;
     const daysToRecover = dailyCashback > 0 ? Math.ceil(remainingLoss / dailyCashback) : 0;
+    const maxCapValue = stats.totalRecovered + stats.sustainabilityCycle.remainingCap;
+    const liveCapProgress = maxCapValue > 0
+        ? (Math.min(stats.totalRecovered + tickingCashback, maxCapValue) / maxCapValue) * 100
+        : 0;
 
     return (
         <div className="min-h-screen bg-[#050505] text-white pb-20 selection:bg-green-500/30">
@@ -305,12 +328,12 @@ export default function CashbackPage() {
                             <div className="h-3 bg-white/5 rounded-full overflow-hidden border border-white/5">
                                 <motion.div
                                     initial={{ width: 0 }}
-                                    animate={{ width: `${stats.sustainabilityCycle.capProgress}%` }}
+                                    animate={{ width: `${liveCapProgress}%` }}
                                     className="h-full bg-gradient-to-r from-green-600 via-green-400 to-emerald-300"
                                 />
                             </div>
                             <div className="flex justify-between text-[10px] font-mono text-zinc-500">
-                                <span>UTILIZATION: {stats.sustainabilityCycle.capProgress.toFixed(1)}%</span>
+                                <span>UTILIZATION: {liveCapProgress.toFixed(1)}%</span>
                                 <span>LIMIT: {stats.sustainabilityCycle.currentCap}</span>
                             </div>
                         </div>
@@ -354,7 +377,7 @@ export default function CashbackPage() {
                             </div>
                             <div className="text-6xl font-black text-white">{stats.boostMultiplier}X</div>
                             <div className="flex flex-wrap gap-2">
-                                <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-mono border border-emerald-500/10">CAP_LOCK_{stats.sustainabilityCycle.currentCap}</span>
+                                <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-mono border border-emerald-500/10">CAP_LOCK {stats.sustainabilityCycle.currentCap}</span>
                                 <span className="px-2 py-1 rounded bg-green-500/10 text-green-400 text-[9px] font-mono border border-green-500/10">{stats.boostTierName}</span>
                             </div>
                         </div>

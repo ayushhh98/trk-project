@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -9,6 +9,7 @@ import { X, ShieldCheck, Wallet, ArrowUpCircle, LucideIcon, Cpu, Fingerprint, Gl
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { toast } from "sonner";
+import { QRCodeCanvas } from "qrcode.react";
 
 interface MembershipModalProps {
     isOpen: boolean;
@@ -17,12 +18,22 @@ interface MembershipModalProps {
 }
 
 export function MembershipModal({ isOpen, onClose, onConfirm }: MembershipModalProps) {
-    const { isConnected, address, connect, usdtBalance, currentChainId } = useWallet();
-    const { addresses } = useWallet(); // Assuming I add addresses to the context or use CONTRACTS directly
+    const { isWalletConnected, connect, usdtBalance, addresses, nativeBalance, currentChainId } = useWallet();
     const [amount, setAmount] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [step, setStep] = useState<'input' | 'manual' | 'authorizing'>('input');
     const [copied, setCopied] = useState(false);
+    const nativeBalanceRef = useRef(nativeBalance);
+    useEffect(() => {
+        nativeBalanceRef.current = nativeBalance;
+    }, [nativeBalance]);
+
+    const getGasBalance = () => Number(nativeBalanceRef.current || 0);
+    const gasBalance = Number(nativeBalance || 0);
+    const needsGas = isWalletConnected && (!Number.isFinite(gasBalance) || gasBalance <= 0);
+    const isTestnet = currentChainId === 97;
+    const gasFaucetUrl = "https://testnet.binance.org/faucet-smart";
+    const qrValue = addresses?.GAME || "";
 
     if (!isOpen) return null;
 
@@ -36,18 +47,30 @@ export function MembershipModal({ isOpen, onClose, onConfirm }: MembershipModalP
         e.preventDefault();
         const val = parseFloat(amount);
         if (!val || val < 1.5) {
-            toast.warning("Minimum injection is 1.5 USDT");
+            toast.warning("Minimum deposit is 1.5 USDT");
             return;
         }
 
         setIsLoading(true);
         try {
             // 1. Ensure Connection
-            if (!isConnected) {
+            if (!isWalletConnected) {
                 toast.loading("Establishing Secure Link...", { id: "connect_toast" });
-                await connect('MetaMask');
+                await connect("Other");
                 // Wait a moment for state to settle
                 await new Promise(resolve => setTimeout(resolve, 1000));
+                toast.dismiss("connect_toast");
+            }
+
+            const gasNow = getGasBalance();
+            if (!Number.isFinite(gasNow) || gasNow <= 0) {
+                toast.error("BNB required for gas fees", {
+                    description: isTestnet
+                        ? "Get free BNB from the faucet, then retry."
+                        : "Add a small amount of BNB to pay network fees."
+                });
+                setStep('input');
+                return;
             }
 
             // 2. Proceed to Deposit
@@ -95,8 +118,8 @@ export function MembershipModal({ isOpen, onClose, onConfirm }: MembershipModalP
                                 <ShieldCheck className="h-5 w-5 text-emerald-500" />
                             </div>
                             <div>
-                                <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40 mb-1">Membership_Bridge</h2>
-                                <h3 className="text-xl font-display font-black tracking-tighter">SECURE_PURCHASE</h3>
+                                <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40 mb-1">Deposit_Bridge</h2>
+                                <h3 className="text-xl font-display font-black tracking-tighter">SECURE_DEPOSIT</h3>
                             </div>
                         </div>
 
@@ -123,13 +146,20 @@ export function MembershipModal({ isOpen, onClose, onConfirm }: MembershipModalP
                                         <p className="text-sm font-bold text-white/80">Send <span className="text-emerald-500">{amount || "X"} USDT</span> (BSC BEP-20) to address below.</p>
                                     </div>
 
-                                    <div className="flex flex-col items-center gap-6 p-8 bg-white/[0.02] border border-white/10 text-center">
-                                        <div className="p-4 bg-white rounded-lg">
-                                            {/* Static QR Placeholder - In a real app we'd use a QR library */}
-                                            <div className="w-32 h-32 flex items-center justify-center border-2 border-dashed border-black/10">
-                                                <QrCode className="h-16 w-16 text-black/20" />
+                                        <div className="flex flex-col items-center gap-6 p-8 bg-white/[0.02] border border-white/10 text-center">
+                                            <div className="p-4 bg-white rounded-lg">
+                                                {qrValue ? (
+                                                    <QRCodeCanvas
+                                                        value={qrValue}
+                                                        size={140}
+                                                        includeMargin
+                                                    />
+                                                ) : (
+                                                    <div className="w-32 h-32 flex items-center justify-center border-2 border-dashed border-black/10">
+                                                        <QrCode className="h-16 w-16 text-black/20" />
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
 
                                         <div className="w-full space-y-4">
                                             <div className="text-[8px] font-black text-white/20 uppercase tracking-[0.3em]">Contract_Address</div>
@@ -173,15 +203,15 @@ export function MembershipModal({ isOpen, onClose, onConfirm }: MembershipModalP
                                     className="space-y-8"
                                 >
                                     <div className="p-4 bg-white/[0.02] border border-white/5 space-y-2">
-                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-1">Step_01 // Package_Selection</h4>
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-1">Step_01 // Deposit_Amount</h4>
                                         <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest leading-relaxed">
-                                            Select membership value. Coins and Reward points will be credited upon verification.
+                                            Choose the amount to deposit. Funds are credited after on-chain confirmation.
                                         </p>
                                     </div>
 
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-end">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Injection_Volume</label>
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Deposit_Amount</label>
                                             <div className="text-right">
                                                 <div className="text-[8px] font-black text-white/20 uppercase tracking-widest mb-1">External_Portfolio</div>
                                                 <button
@@ -224,26 +254,74 @@ export function MembershipModal({ isOpen, onClose, onConfirm }: MembershipModalP
                                             />
                                             <div className="absolute right-6 top-1/2 -translate-y-1/2 text-xs font-black text-white/20">SC</div>
                                         </div>
+
+                                        <div className="border border-white/10 bg-white/[0.02] p-4 rounded-xl space-y-3">
+                                            <div className="text-[9px] font-black text-white/30 uppercase tracking-widest">
+                                                How To Deposit Successfully
+                                            </div>
+                                            <div className="text-[10px] text-white/50 leading-relaxed">
+                                                1. Connect your wallet and stay on BSC (BEP-20).
+                                            </div>
+                                            <div className="text-[10px] text-white/50 leading-relaxed">
+                                                2. Make sure you have a little BNB for gas fees.
+                                            </div>
+                                            <div className="text-[10px] text-white/50 leading-relaxed">
+                                                3. Enter the amount and confirm the USDT approval + deposit.
+                                            </div>
+                                            <div className="text-[10px] text-white/50 leading-relaxed">
+                                                4. Wait for on-chain confirmation, then your balance syncs automatically.
+                                            </div>
+                                        </div>
                                     </div>
+
+                                    {needsGas && (
+                                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-[10px] font-black uppercase tracking-widest text-amber-500 flex flex-col gap-3">
+                                            <span>Gas required: add BNB to pay network fees.</span>
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                {isTestnet && (
+                                                    <a
+                                                        href={gasFaucetUrl}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="w-full"
+                                                    >
+                                                        <Button
+                                                            type="button"
+                                                            className="w-full h-9 bg-amber-500 text-black hover:bg-amber-400 font-black text-[9px] uppercase tracking-widest"
+                                                        >
+                                                            Get Free BNB
+                                                        </Button>
+                                                    </a>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    onClick={() => setStep('manual')}
+                                                    className="w-full h-9 bg-white/5 text-white hover:bg-white/10 border border-white/10 font-black text-[9px] uppercase tracking-widest"
+                                                >
+                                                    Manual Transfer
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     <Button
                                         type="submit"
                                         className={cn(
                                             "w-full h-16 transition-all font-black text-xs tracking-[0.2em] uppercase rounded-none group",
-                                            isConnected ? "bg-emerald-500 text-black hover:bg-emerald-400" : "bg-purple-600 text-white hover:bg-purple-500"
+                                            isWalletConnected ? "bg-emerald-500 text-black hover:bg-emerald-400" : "bg-purple-600 text-white hover:bg-purple-500"
                                         )}
-                                        disabled={!amount || parseFloat(amount) <= 0 || isLoading}
+                                        disabled={!amount || parseFloat(amount) <= 0 || isLoading || needsGas}
                                     >
                                         {isLoading
-                                            ? (isConnected ? "TRANSMITTING..." : "INITIALIZING...")
-                                            : (isConnected ? "PURCHASE_PACKAGE" : "AUTHENTICATE_&_PURCHASE")}
+                                            ? (isWalletConnected ? "TRANSMITTING..." : "CONNECTING...")
+                                            : (isWalletConnected ? "DEPOSIT_USDT" : "CONNECT_WALLET_&_DEPOSIT")}
                                         <ArrowUpCircle className="ml-3 h-5 w-5 group-hover:scale-110 transition-transform" />
                                     </Button>
 
                                     <div className="flex items-center justify-between pt-4 border-t border-white/5">
                                         <div className="flex items-center gap-2 opacity-30">
                                             <ShieldCheck className="h-3 w-3" />
-                                            <span className="text-[8px] font-black tracking-widest uppercase">MetaMask_Secure</span>
+                                            <span className="text-[8px] font-black tracking-widest uppercase">Wallet_Secure</span>
                                         </div>
                                         <button
                                             type="button"

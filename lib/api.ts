@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL?.trim() || 'http://localhost:5002').replace(/\/api\/?$/, '') + '/api';
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL?.trim() || 'http://localhost:5000').replace(/\/api\/?$/, '') + '/api';
 
 // Token storage keys
 const TOKEN_KEY = 'trk_token';
@@ -465,6 +465,100 @@ export const apiRequest = async (
             };
         }
 
+        if (endpoint.includes('/admin/posters')) {
+            const method = (options?.method || 'GET').toUpperCase();
+            if (method === 'POST') {
+                const body = options?.body ? JSON.parse(options.body as string) : {};
+                return {
+                    status: 'success',
+                    data: {
+                        _id: 'mock-poster-' + Math.random().toString(36).slice(2),
+                        type: body.type || 'promo',
+                        title: body.title || 'New Poster',
+                        description: body.description || 'Poster created in mock mode.',
+                        link: body.link || '/dashboard',
+                        imageUrl: body.imageUrl || '',
+                        stats: body.stats || [],
+                        isActive: body.isActive ?? true
+                    }
+                };
+            }
+
+            return {
+                status: 'success',
+                data: [
+                    {
+                        _id: 'mock-poster-1',
+                        type: 'promo',
+                        title: 'Become The Protocol Owner',
+                        description: 'Unlock governance rights, revenue sharing, and elite tier withdrawal limits.',
+                        link: '/dashboard',
+                        imageUrl: '',
+                        isActive: true
+                    },
+                    {
+                        _id: 'mock-poster-2',
+                        type: 'launch',
+                        title: 'Lucky Draw Jackpot',
+                        description: 'Enter the next draw and secure a share of the protocol prize pool.',
+                        link: '/dashboard/lucky-draw',
+                        imageUrl: '',
+                        stats: [
+                            { label: 'Prize Pool', value: '$25,000' },
+                            { label: 'Tickets', value: 'Unlimited' },
+                            { label: 'Draw', value: 'Daily' }
+                        ],
+                        isActive: true
+                    }
+                ]
+            };
+        }
+
+        if (endpoint.includes('/admin/contract/transactions')) {
+            return {
+                status: 'success',
+                pagination: {
+                    page: 1,
+                    offset: 100,
+                    hasMore: false
+                },
+                data: [
+                    {
+                        hash: '0x7a9d2c1b5e8f4c6d9a2b3f1e0d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c',
+                        method: 'Token Transfer',
+                        status: 'Confirmed',
+                        amount: '150.00',
+                        symbol: 'USDT',
+                        time: '4m ago'
+                    },
+                    {
+                        hash: '0x1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d',
+                        method: 'PlaceBet',
+                        status: 'Confirmed',
+                        amount: '25.00',
+                        symbol: 'USDT',
+                        time: '19m ago'
+                    },
+                    {
+                        hash: '0x9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e',
+                        method: 'WinClaimed',
+                        status: 'Confirmed',
+                        amount: '320.00',
+                        symbol: 'USDT',
+                        time: '1h ago'
+                    },
+                    {
+                        hash: '0x2b1a0f9e8d7c6b5a4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f',
+                        method: 'Token Transfer',
+                        status: 'Failed',
+                        amount: '50.00',
+                        symbol: 'USDT',
+                        time: '3h ago'
+                    }
+                ]
+            };
+        }
+
         // Default mock success response
         return { status: 'success', data: {} };
     }
@@ -546,6 +640,11 @@ export const apiRequest = async (
 
         return data;
     } catch (error: any) {
+        if (error?.name === 'TypeError' && /fetch/i.test(error?.message || '')) {
+            const hint = `API unreachable. Check NEXT_PUBLIC_API_URL (${API_BASE_URL}) and make sure the backend is running.`;
+            console.error(`API Error (${endpoint}):`, error, hint);
+            throw new Error(hint);
+        }
         console.error(`API Error (${endpoint}):`, error);
         throw error;
     }
@@ -792,6 +891,24 @@ export const gameAPI = {
     getLive: async () => {
         return apiRequest('/game/live');
     },
+
+    // Get Lucky Draw Status
+    getLuckyDrawStatus: async () => {
+        return apiRequest('/lucky-draw/status');
+    },
+
+    // Buy Lucky Draw Tickets
+    buyLuckyDrawTickets: async (quantity: number) => {
+        return apiRequest('/lucky-draw/buy-ticket', {
+            method: 'POST',
+            body: JSON.stringify({ quantity })
+        });
+    },
+
+    // Get User Tickets
+    getMyTickets: async () => {
+        return apiRequest('/lucky-draw/my-tickets');
+    }
 };
 
 // Referral API
@@ -903,10 +1020,23 @@ export const freeCreditsAPI = {
     }
 };
 
+// Club (Ecosystem Rank) API
+export const clubAPI = {
+    getStatus: async () => {
+        return apiRequest('/club/status');
+    },
+    getStructure: async () => {
+        return apiRequest('/club/structure');
+    }
+};
+
 // Admin API (RBAC protected)
 export const adminAPI = {
     getAnalytics: async () => {
         return apiRequest('/admin/analytics');
+    },
+    getAnalyticsHistory: async (days: number = 7) => {
+        return apiRequest(`/admin/analytics/history?days=${days}`);
     },
     getSystemStatus: async () => {
         return apiRequest('/admin/system/status');
@@ -942,6 +1072,66 @@ export const adminAPI = {
         if (params?.limit) qs.append('limit', params.limit.toString());
         if (params?.gameType) qs.append('gameType', params.gameType);
         return apiRequest(`/admin/games?${qs.toString()}`);
+    },
+    getWallets: async () => {
+        return apiRequest('/admin/wallets');
+    },
+    addWallet: async (payload: { name: string; address: string; type?: string }) => {
+        return apiRequest('/admin/wallets', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+    deleteWallet: async (id: string) => {
+        return apiRequest(`/admin/wallets/${id}`, {
+            method: 'DELETE'
+        });
+    },
+    getContractTransactions: async (params?: { page?: number; offset?: number; sort?: 'asc' | 'desc'; mode?: 'tokentx' | 'txlist' }) => {
+        const qs = new URLSearchParams();
+        if (params?.page) qs.append('page', params.page.toString());
+        if (params?.offset) qs.append('offset', params.offset.toString());
+        if (params?.sort) qs.append('sort', params.sort);
+        if (params?.mode) qs.append('mode', params.mode);
+        const suffix = qs.toString() ? `?${qs.toString()}` : '';
+        return apiRequest(`/admin/contract/transactions${suffix}`);
+    },
+    getJackpotStatus: async () => {
+        return apiRequest('/lucky-draw/status');
+    },
+    updateJackpotParams: async (params: { newPrice?: number; newLimit?: number }) => {
+        return apiRequest('/lucky-draw/admin/update-params', {
+            method: 'POST',
+            body: JSON.stringify(params)
+        });
+    },
+    toggleJackpotPause: async () => {
+        return apiRequest('/lucky-draw/admin/toggle-pause', {
+            method: 'POST'
+        });
+    },
+    withdrawJackpotSurplus: async () => {
+        return apiRequest('/lucky-draw/admin/withdraw-surplus', {
+            method: 'POST'
+        });
+    },
+    getDBStats: async (options?: RequestInit) => {
+        return apiRequest('/admin/db/stats', options);
+    },
+    getPosters: async () => {
+        return apiRequest('/admin/posters');
+    },
+    createPoster: async (data: any) => {
+        return apiRequest('/admin/posters', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    },
+    updatePoster: async (id: string, data: any) => {
+        return apiRequest(`/admin/posters/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
     }
 };
 
@@ -974,6 +1164,13 @@ export const roiOnRoiAPI = {
     },
 };
 
+// Content API (Public)
+export const contentAPI = {
+    getPosters: async () => {
+        return apiRequest('/content/posters');
+    }
+};
+
 export default {
     auth: authAPI,
     user: userAPI,
@@ -983,6 +1180,8 @@ export default {
     rewards: rewardsAPI,
     packages: packagesAPI,
     freeCredits: freeCreditsAPI,
+    club: clubAPI,
     admin: adminAPI,
     roiOnRoi: roiOnRoiAPI,
+    content: contentAPI
 };

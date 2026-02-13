@@ -11,21 +11,9 @@ export function AdminCharts() {
     useEffect(() => {
         const fetchAnalytics = async () => {
             try {
-                // In a real app, we would have a specific endpoint for historical data
-                // For now, we'll mock the historical data based on the "ROI on ROI" analytics structure
-                // or extend the adminAPI to return time-series data.
-                // Let's assume adminAPI.getAnalytics() returns some historical trends or we mock it for the UI.
-
-                const res = await adminAPI.getAnalytics();
+                const res = await adminAPI.getAnalyticsHistory(7);
                 if (res.status === 'success') {
-                    // Mocking time-series for demonstration if not present
-                    const mockTrend = Array.from({ length: 7 }, (_, i) => ({
-                        name: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
-                        wagered: Math.floor(Math.random() * 5000) + 1000,
-                        payout: Math.floor(Math.random() * 4000) + 800,
-                        users: Math.floor(Math.random() * 50) + 5
-                    }));
-                    setData(mockTrend);
+                    setData(res.data);
                 }
             } catch (error) {
                 console.error("Failed to fetch chart data:", error);
@@ -39,15 +27,15 @@ export function AdminCharts() {
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm">
-                <CardHeader>
-                    <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                        Volume vs Payouts (7 Days)
+            <Card className="bg-[#0a0a0a]/50 border-white/5 backdrop-blur-xl rounded-[2.5rem] overflow-hidden">
+                <CardHeader className="p-6 border-b border-white/5">
+                    <CardTitle className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">
+                        Volume Infrastructure Analysis
                     </CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                <CardContent className="p-6">
+                    <div className="h-[300px] min-h-[300px] w-full min-w-0" style={{ height: 300 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
                             <AreaChart data={data}>
                                 <defs>
                                     <linearGradient id="colorWagered" x1="0" y1="0" x2="0" y2="1">
@@ -74,15 +62,15 @@ export function AdminCharts() {
                 </CardContent>
             </Card>
 
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm">
-                <CardHeader>
-                    <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                        New User Growth
+            <Card className="bg-[#0a0a0a]/50 border-white/5 backdrop-blur-xl rounded-[2.5rem] overflow-hidden">
+                <CardHeader className="p-6 border-b border-white/5">
+                    <CardTitle className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">
+                        User Expansion Metrics
                     </CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                <CardContent className="p-6">
+                    <div className="h-[300px] min-h-[300px] w-full min-w-0" style={{ height: 300 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
                             <BarChart data={data}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                                 <XAxis dataKey="name" stroke="#666" fontSize={12} tickLine={false} axisLine={false} />

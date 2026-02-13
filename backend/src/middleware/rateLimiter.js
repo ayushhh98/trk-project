@@ -1,9 +1,14 @@
 const rateLimit = require('express-rate-limit');
 
-// Auth endpoints rate limiter (5 requests per 15 minutes per IP)
+const isProd = process.env.NODE_ENV === 'production';
+const authWindowMs = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS) || (isProd ? 15 * 60 * 1000 : 60 * 1000);
+const authMax = Number(process.env.AUTH_RATE_LIMIT_MAX) || (isProd ? 5 : 100);
+const disableAuthLimiter = process.env.AUTH_RATE_LIMIT_DISABLED === 'true';
+
+// Auth endpoints rate limiter (defaults: prod 5/15m, dev 100/1m)
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5,
+    windowMs: authWindowMs,
+    max: authMax,
     message: {
         status: 'error',
         message: 'Too many authentication attempts. Please try again in 15 minutes.'
@@ -11,7 +16,8 @@ const authLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     // Skip successful requests from counting
-    skipSuccessfulRequests: false
+    skipSuccessfulRequests: false,
+    skip: () => disableAuthLimiter
 });
 
 // Withdrawal endpoints rate limiter (3 requests per hour per user)

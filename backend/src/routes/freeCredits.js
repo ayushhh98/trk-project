@@ -18,6 +18,16 @@ router.post('/claim', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user._id);
         const now = Date.now();
+
+        // Ensure freeCredits object exists
+        if (!user.freeCredits) {
+            user.freeCredits = {
+                daily: 100,
+                lastClaimed: null,
+                totalClaimed: 0
+            };
+        }
+
         const lastClaim = user.freeCredits.lastClaimed;
 
         // Check 24-hour cooldown
@@ -71,10 +81,14 @@ router.post('/claim', auth, async (req, res) => {
             }
         });
     } catch (error) {
-        logger.error('Free credits claim error:', error);
+        logger.error('Free credits claim error:', {
+            error: error.message,
+            stack: error.stack,
+            userId: req.user?._id
+        });
         res.status(500).json({
             status: 'error',
-            message: 'Failed to claim free credits'
+            message: `Failed to claim free credits: ${error.message}`
         });
     }
 });
@@ -87,6 +101,16 @@ router.get('/status', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user._id);
         const now = Date.now();
+
+        // Ensure freeCredits object exists
+        if (!user.freeCredits) {
+            user.freeCredits = {
+                daily: 100,
+                lastClaimed: null,
+                totalClaimed: 0
+            };
+        }
+
         const lastClaim = user.freeCredits.lastClaimed;
 
         let canClaim = true;
@@ -117,10 +141,14 @@ router.get('/status', auth, async (req, res) => {
             }
         });
     } catch (error) {
-        logger.error('Free credits status error:', error);
+        logger.error('Free credits status error:', {
+            error: error.message,
+            stack: error.stack,
+            userId: req.user?._id
+        });
         res.status(500).json({
             status: 'error',
-            message: 'Failed to get free credits status'
+            message: `Failed to get free credits status: ${error.message}`
         });
     }
 });

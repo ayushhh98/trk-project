@@ -1,209 +1,314 @@
 const express = require('express');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const { requireAdmin, requireSuperAdmin } = require('../middleware/rbac');
+const JackpotService = require('../services/jackpotService');
 
 const router = express.Router();
 
+// In development, allow admin to manage jackpot to avoid blocking local testing.
+const requireJackpotAdmin = process.env.NODE_ENV === 'production' ? requireSuperAdmin : requireAdmin;
+
+// Service instance will be set after Socket.IO initialization
+let jackpotService;
+
+// Initialize service with Socket.IO
+router.initializeService = (io) => {
+    jackpotService = new JackpotService(io);
+};
+
 // ============================================
-// TRK BLOCKCHAIN LUCKY DRAW (LIVE)
+// PUBLIC ROUTES
 // ============================================
-// Automatic jackpot pools with guaranteed winners.
-// 1 in 10 players wins. Total Prize Pool: 70,000 USDT.
 
-const TICKETS_TOTAL = 10000;
-const TICKET_PRICE = 10;
-const TOTAL_WINNERS = 1000;
-
-const PRIZE_CHART = [
-    { rank: '1st', amount: 10000, winners: 1 },
-    { rank: '2nd', amount: 5000, winners: 1 },
-    { rank: '3rd', amount: 4000, winners: 1 },
-    { rank: '4th - 10th', amount: 1000, winners: 7 },
-    { rank: '11th - 50th', amount: 300, winners: 40 },
-    { rank: '51st - 100th', amount: 120, winners: 50 },
-    { rank: '101st - 500th', amount: 40, winners: 400 },
-    { rank: '501st - 1000th', amount: 20, winners: 500 }
-];
-
-// Mock Global State
-// Administrative Mock State
-let ticketPrice = 10;
-let totalTicketsLimit = 10000;
-let currentTicketsSold = 1560;
-let drawIsActive = true;
-let totalSurplus = 0;
-
+/**
+ * GET /lucky-draw/status
+ * Get current jackpot round status
+ */
 router.get('/status', async (req, res) => {
     try {
+        if (!jackpotService) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Jackpot service not initialized'
+            });
+        }
+
+        const status = await jackpotService.getRoundStatus();
+
         res.status(200).json({
             status: 'success',
             data: {
-                totalTickets: totalTicketsLimit,
-                ticketsSold: currentTicketsSold,
-                ticketPrice: ticketPrice,
-                totalWinners: TOTAL_WINNERS,
-                winChance: '10%',
-                totalPrizePool: 70000,
-                prizes: PRIZE_CHART,
-                drawIsActive,
-                totalSurplus,
-                recentWinners: [
-                    { wallet: '0x71...3A2', prize: '$10,000', rank: '1st' },
-                    { wallet: '0x49...1B5', prize: '$5,000', rank: '2nd' },
-                    { wallet: '0xBC...E91', prize: '$4,000', rank: '3rd' }
-                ]
+                ...status,
+                drawIsActive: status.isActive,
+                totalSurplus: 0 // Surplus only visible to admins
             }
         });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to get jackpot status' });
+        console.error('Get jackpot status error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to get jackpot status'
+        });
     }
 });
 
+/**
+ * POST /lucky-draw/buy-ticket
+ * Purchase jackpot tickets
+ */
 router.post('/buy-ticket', auth, async (req, res) => {
     try {
-        if (!drawIsActive) {
-            return res.status(403).json({ status: 'error', message: 'Lucky Draw is currently paused' });
+        if (!jackpotService) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Jackpot service not initialized'
+            });
         }
 
         const { quantity = 1 } = req.body;
-        const user = await User.findById(req.user.id);
 
-        const totalCost = quantity * ticketPrice;
-
-        // SWEEPSTAKES: Buy tickets with Credits (GC)
-        if (user.credits < totalCost) {
+        // Validate quantity
+        if (quantity < 1 || quantity > 100) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Insufficient Credits'
+                message: 'Invalid quantity (1-100 tickets allowed)'
             });
         }
 
-        user.credits -= totalCost;
-        // user.realBalances.cash -= totalCost;
-
-        if (currentTicketsSold + quantity > totalTicketsLimit) {
-            return res.status(400).json({ status: 'error', message: 'Exceeds round limit' });
-        }
-
-        // user.realBalances.cash -= totalCost; // This line was removed as per instruction
-        currentTicketsSold += quantity;
-
-        // Calculate surplus for this purchase (30% revenue)
-        // 70,000 USDT payout vs 100,000 USDT collected at $10 price
-        // Ratio is 0.3 if price is $10 and pool is 70k for 10k tickets.
-        const surplusPerTicket = (ticketPrice * totalTicketsLimit - 70000) / totalTicketsLimit;
-        totalSurplus += quantity * surplusPerTicket;
-
-        const tickets = [];
-        for (let i = 0; i < quantity; i++) {
-            tickets.push({
-                ticketId: `LKY-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-                purchasedAt: new Date()
-            });
-        }
-
-        await user.save();
-
-        if (currentTicketsSold >= totalTicketsLimit) {
-            // Simulate draw execution with real users
-            const allUsers = await User.find({ isActive: true }).select('walletAddress');
-            if (allUsers.length > 0) {
-                // Select 3 random winners for the real-time ticker demo
-                const winners = [];
-                for (let i = 0; i < 3; i++) {
-                    const randomUser = allUsers[Math.floor(Math.random() * allUsers.length)];
-                    const prize = i === 0 ? "10,000" : i === 1 ? "5,000" : "4,000";
-                    const rank = i === 0 ? "1st" : i === 1 ? "2nd" : "3rd";
-
-                    const winnerData = {
-                        wallet: randomUser.walletAddress,
-                        prize: `${prize} USDT`,
-                        rank: rank
-                    };
-                    winners.push(winnerData);
-
-                    // Emit Real-Time Socket Event
-                    const io = req.app.get('io');
-                    if (io) {
-                        io.emit('lucky_draw_winner', winnerData);
-                    }
-                }
-                console.log('--- DRAW EXECUTED SUCCESSFULLY WITH REAL-TIME EMISSION ---');
-            }
-            currentTicketsSold = 0;
-        }
+        const result = await jackpotService.purchaseTickets(req.user.id, quantity);
 
         res.status(200).json({
             status: 'success',
             message: `Successfully purchased ${quantity} ticket(s)`,
-            data: {
-                tickets,
-                newBalance: user.realBalances.cash,
-                currentPoolProgress: `${((currentTicketsSold / totalTicketsLimit) * 100).toFixed(1)}%`
-            }
+            data: result
         });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to purchase tickets' });
+        console.error('Buy ticket error:', error);
+        res.status(error.message.includes('Insufficient') ? 400 : 500).json({
+            status: 'error',
+            message: error.message || 'Failed to purchase tickets'
+        });
     }
 });
 
-// Admin Control: Update Parameters
-router.post('/admin/update-params', auth, async (req, res) => {
-    try {
-        // In product, check for admin role
-        const { newPrice, newLimit } = req.body;
-        if (currentTicketsSold > 0) {
-            return res.status(400).json({ status: 'error', message: 'Cannot change parameters during an active round' });
-        }
-
-        if (newPrice) ticketPrice = newPrice;
-        if (newLimit) totalTicketsLimit = newLimit;
-
-        res.status(200).json({ status: 'success', message: 'Parameters updated', data: { ticketPrice, totalTicketsLimit } });
-    } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to update parameters' });
-    }
-});
-
-// Admin Control: Toggle Pause
-router.post('/admin/toggle-pause', auth, async (req, res) => {
-    try {
-        drawIsActive = !drawIsActive;
-        res.status(200).json({ status: 'success', message: `Draw ${drawIsActive ? 'resumed' : 'paused'}`, data: { drawIsActive } });
-    } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to toggle pause' });
-    }
-});
-
-// Admin Control: Withdraw Surplus
-router.post('/admin/withdraw-surplus', auth, async (req, res) => {
-    try {
-        const amount = totalSurplus;
-        totalSurplus = 0;
-        res.status(200).json({ status: 'success', message: `Withdrawn ${amount} USDT surplus`, data: { withdrawnAmount: amount } });
-    } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to withdraw surplus' });
-    }
-});
-
+/**
+ * GET /lucky-draw/my-tickets
+ * Get user's ticket history
+ */
 router.get('/my-tickets', auth, async (req, res) => {
     try {
+        const JackpotRound = require('../models/JackpotRound');
+
+        // Get active round tickets
+        const activeRound = await JackpotRound.getActiveRound();
+        const activeTickets = activeRound
+            ? activeRound.tickets.filter(t => t.userId.toString() === req.user.id)
+            : [];
+
+        // Get past draws where user won
+        const completedRounds = await JackpotRound.find({
+            status: 'completed',
+            'winners.userId': req.user.id
+        }).sort({ createdAt: -1 }).limit(10);
+
+        const pastDraws = completedRounds.map(round => {
+            const userWins = round.winners.filter(w => w.userId.toString() === req.user.id);
+            const totalWon = userWins.reduce((sum, w) => sum + w.prize, 0);
+            const userTickets = round.tickets.filter(t => t.userId.toString() === req.user.id);
+
+            return {
+                roundNumber: round.roundNumber,
+                date: round.drawExecutedAt,
+                tickets: userTickets.length,
+                won: totalWon,
+                prizes: userWins.map(w => ({ rank: w.rank, amount: w.prize }))
+            };
+        });
+
         res.status(200).json({
             status: 'success',
             data: {
-                activeTickets: [
-                    { ticketId: 'LKY-8A2B3C', purchasedAt: new Date(Date.now() - 3600000) },
-                    { ticketId: 'LKY-1X9Y2Z', purchasedAt: new Date(Date.now() - 7200000) }
-                ],
-                pastDraws: [
-                    { date: '2026-02-02', tickets: 5, won: 0 },
-                    { date: '2026-02-01', tickets: 2, won: 20 }
-                ]
+                activeTickets: activeTickets.map(t => ({
+                    ticketId: t.ticketId,
+                    purchasedAt: t.purchasedAt
+                })),
+                pastDraws
             }
         });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to get tickets' });
+        console.error('Get tickets error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to get tickets'
+        });
+    }
+});
+
+// ============================================
+// ADMIN ROUTES
+// ============================================
+
+/**
+ * POST /lucky-draw/admin/update-params
+ * Update round parameters (superadmin only)
+ */
+router.post('/admin/update-params', auth, requireJackpotAdmin, async (req, res) => {
+    try {
+        if (!jackpotService) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Jackpot service not initialized'
+            });
+        }
+
+        const { newPrice, newLimit } = req.body;
+
+        const round = await jackpotService.getActiveRound();
+        await jackpotService.updateParameters(
+            round._id,
+            newPrice,
+            newLimit,
+            req.user.id
+        );
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Parameters updated',
+            data: {
+                ticketPrice: newPrice || round.ticketPrice,
+                totalTickets: newLimit || round.totalTickets
+            }
+        });
+    } catch (error) {
+        console.error('Update params error:', error);
+        res.status(400).json({
+            status: 'error',
+            message: error.message || 'Failed to update parameters'
+        });
+    }
+});
+
+/**
+ * POST /lucky-draw/admin/toggle-pause
+ * Toggle draw pause/resume (admin)
+ */
+router.post('/admin/toggle-pause', auth, requireAdmin, async (req, res) => {
+    try {
+        if (!jackpotService) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Jackpot service not initialized'
+            });
+        }
+
+        const round = await jackpotService.getActiveRound();
+        await jackpotService.togglePause(round._id);
+
+        const newStatus = !round.isActive;
+
+        res.status(200).json({
+            status: 'success',
+            message: `Draw ${newStatus ? 'resumed' : 'paused'}`,
+            data: { drawIsActive: newStatus }
+        });
+    } catch (error) {
+        console.error('Toggle pause error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to toggle pause'
+        });
+    }
+});
+
+/**
+ * POST /lucky-draw/admin/withdraw-surplus
+ * Withdraw surplus from completed rounds (superadmin)
+ */
+router.post('/admin/withdraw-surplus', auth, requireJackpotAdmin, async (req, res) => {
+    try {
+        if (!jackpotService) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Jackpot service not initialized'
+            });
+        }
+
+        const JackpotRound = require('../models/JackpotRound');
+
+        // Get all completed rounds with unwithdra wn surplus
+        const completedRounds = await JackpotRound.find({
+            status: 'completed',
+            surplusWithdrawn: false,
+            surplus: { $gt: 0 }
+        });
+
+        let totalWithdrawn = 0;
+
+        for (const round of completedRounds) {
+            const amount = await jackpotService.withdrawSurplus(round._id, req.user.id);
+            totalWithdrawn += amount;
+        }
+
+        res.status(200).json({
+            status: 'success',
+            message: `Withdrawn ${totalWithdrawn.toFixed(2)} USDT surplus`,
+            data: { withdrawnAmount: totalWithdrawn }
+        });
+    } catch (error) {
+        console.error('Withdraw surplus error:', error);
+        res.status(400).json({
+            status: 'error',
+            message: error.message || 'Failed to withdraw surplus'
+        });
+    }
+});
+
+/**
+ * POST /lucky-draw/admin/execute-draw
+ * Manually execute draw (superadmin)
+ */
+router.post('/admin/execute-draw', auth, requireJackpotAdmin, async (req, res) => {
+    try {
+        if (!jackpotService) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Jackpot service not initialized'
+            });
+        }
+
+        const round = await jackpotService.getActiveRound();
+
+        if (round.ticketsSold === 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Cannot execute draw with no tickets sold'
+            });
+        }
+
+        const winners = await jackpotService.executeDraw(
+            round._id,
+            req.user.id,
+            'manual'
+        );
+
+        res.status(200).json({
+            status: 'success',
+            message: `Draw executed, ${winners.length} winners selected`,
+            data: {
+                roundNumber: round.roundNumber,
+                winnersCount: winners.length,
+                topWinners: winners.slice(0, 3)
+            }
+        });
+    } catch (error) {
+        console.error('Execute draw error:', error);
+        res.status(400).json({
+            status: 'error',
+            message: error.message || 'Failed to execute draw'
+        });
     }
 });
 
 module.exports = router;
+

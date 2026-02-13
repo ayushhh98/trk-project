@@ -27,7 +27,7 @@ export function DiceGame({ }: DiceGameProps) {
     } = useWallet();
     const router = useRouter();
 
-    const [amount, setAmount] = useState(0.5);
+    const [amount, setAmount] = useState(1);
     const [isProcessing, setIsProcessing] = useState(false);
     const [lastResult, setLastResult] = useState<{ won: boolean; number: number; pick: number; hash: string; amount: number } | null>(null);
 
@@ -40,8 +40,8 @@ export function DiceGame({ }: DiceGameProps) {
             ? realBalances.totalUnified
             : parseFloat(practiceBalance);
 
-        if (amount < 0.5) {
-            toast.warning(`Minimum bet is 0.5 ${currencyLabel}`);
+        if (amount < 1.0) {
+            toast.warning(`Minimum bet is 1.0 ${currencyLabel}`);
             return;
         }
         if (currentBalance < amount) {
@@ -126,7 +126,7 @@ export function DiceGame({ }: DiceGameProps) {
                 <div className="flex items-center justify-center gap-6 text-[10px] font-black uppercase tracking-widest text-white/20 mb-10">
                     <div className="flex items-center gap-2">
                         <div className="h-1 w-8 rounded-full bg-white/5" />
-                        Min Entry: <span className={isRealMode ? "text-green-500" : "text-primary"}>0.5 SC</span>
+                        Min Entry: <span className={isRealMode ? "text-green-500" : "text-primary"}>1.0 {currencyLabel}</span>
                         <div className="h-1 w-8 rounded-full bg-white/5" />
                     </div>
                 </div>

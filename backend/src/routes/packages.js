@@ -86,9 +86,18 @@ async function verifyCryptoTransaction(txHash, expectedPrice, userAddress) {
 
         if (!tx) throw new Error('Transaction not found');
 
-        // Wait for at least 1 confirmation for safety
-        const receipt = await provider.getTransactionReceipt(txHash);
-        if (!receipt || receipt.status !== 1) throw new Error('Transaction failed or pending');
+        // Wait for transaction to be mined (max 30s wait)
+        let receipt;
+        try {
+            // Ethers v6: tx.wait() is available on the TransactionResponse object
+            receipt = await tx.wait(1, 30000); // 1 conf, 30s timeout
+        } catch (waitErr) {
+            console.warn(`[Backend] Wait failed for ${txHash}:`, waitErr.message);
+            // Safety fallback just in case wait fails but it's mined
+            receipt = await provider.getTransactionReceipt(txHash);
+        }
+
+        if (!receipt || receipt.status !== 1) throw new Error('Transaction failed, pending, or not found after wait');
 
         // Check recipient (Should be your treasury wallet or contract)
         // For simple packages, we might check if it was sent to the GAME contract or a treasury

@@ -74,13 +74,18 @@ export function AdminLiveFeed() {
     }, [socket]);
 
     return (
-        <Card className="h-[600px] flex flex-col bg-white/5 border-white/10 backdrop-blur-sm">
-            <CardHeader className="flex-none border-b border-white/5">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                        <Activity className="h-4 w-4 text-emerald-500" />
-                        Live Ledger
-                    </span>
+        <Card className="h-[600px] flex flex-col bg-[#0a0a0a]/50 border-white/5 backdrop-blur-xl rounded-[2.5rem] overflow-hidden">
+            <CardHeader className="flex-none p-6 border-b border-white/5">
+                <CardTitle className="flex items-center justify-between">
+                    <div>
+                        <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">
+                            Live Protocol Ledger
+                        </div>
+                        <p className="text-[9px] text-white/20 uppercase tracking-widest font-bold flex items-center gap-2">
+                            <Activity className="h-3 w-3 text-emerald-500" />
+                            Real-time Node Activity
+                        </p>
+                    </div>
                     <span className="flex items-center gap-2 text-[10px] font-black text-white/40">
                         <span className={cn("relative flex h-2 w-2", isConnected ? "text-emerald-400" : "text-red-400")}>
                             <span className={cn("absolute inline-flex h-full w-full rounded-full opacity-75", isConnected ? "animate-ping bg-emerald-400" : "bg-red-400")} />

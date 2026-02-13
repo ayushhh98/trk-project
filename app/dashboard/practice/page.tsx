@@ -24,7 +24,8 @@ export default function PracticeGamePage() {
         realBalances, practiceBalance, faucet, isLoading, user,
         placeEntry, realEntry, purchaseMembership, practiceExpiry,
         gameHistory, claimWin, unclaimedRounds, refetchUnclaimed,
-        isRealMode, setIsRealMode, usdtBalance, hasRealAccess
+        isRealMode, setIsRealMode, usdtBalance, hasRealAccess,
+        loadMoreHistory, hasMoreHistory, isHistoryLoading
     } = useWallet();
     const [selectedGame, setSelectedGame] = useState<GameType>('lobby');
     const [isDepositOpen, setIsDepositOpen] = useState(false);
@@ -117,7 +118,7 @@ export default function PracticeGamePage() {
                                         Vault
                                     </span>
                                     <span className={cn("text-xs font-mono font-bold leading-tight", isRealMode ? "text-white" : "text-white/30")}>
-                                        {realBalances.game.toFixed(2)} <small className="text-[7px]">SC</small>
+                                        {(realBalances?.game || 0).toFixed(2)} <small className="text-[7px]">SC</small>
                                     </span>
                                 </div>
                             </div>
@@ -235,7 +236,12 @@ export default function PracticeGamePage() {
 
                                     {/* Universal Bet History */}
                                     <div className="pt-20 border-t border-white/5">
-                                        <BetHistory history={gameHistory} />
+                                        <BetHistory
+                                            history={gameHistory}
+                                            onLoadMore={loadMoreHistory}
+                                            hasMore={hasMoreHistory}
+                                            isLoadingMore={isHistoryLoading}
+                                        />
                                     </div>
 
                                     {/* Universal Info Cards */}
@@ -252,7 +258,7 @@ export default function PracticeGamePage() {
                                                 <div className="text-right">
                                                     <div className="text-[10px] font-black text-white/30 uppercase tracking-widest">Session_Intelligence</div>
                                                     <div className="text-xl font-mono font-bold text-white flex items-center gap-2 justify-end">
-                                                        {practiceBalance}
+                                                        {parseFloat(practiceBalance || "0").toFixed(2)}
                                                         <span className="text-[10px] text-primary font-black">CHIPS</span>
                                                     </div>
                                                 </div>

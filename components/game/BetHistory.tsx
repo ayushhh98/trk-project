@@ -34,6 +34,9 @@ interface HistoryItem {
 interface BetHistoryProps {
     history: HistoryItem[];
     className?: string;
+    onLoadMore?: () => void;
+    hasMore?: boolean;
+    isLoadingMore?: boolean;
 }
 
 const gameIcons = {
@@ -45,12 +48,8 @@ const gameIcons = {
     matrix: { icon: BrainCircuit, color: 'text-indigo-500' },
 };
 
-export function BetHistory({ history, className }: BetHistoryProps) {
-    // Filter history to only show last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const recentHistory = history.filter(item => new Date(item.timestamp) > thirtyDaysAgo);
+export function BetHistory({ history, className, onLoadMore, hasMore = false, isLoadingMore = false }: BetHistoryProps) {
+    const recentHistory = history;
 
     return (
         <div className={cn("space-y-6", className)}>
@@ -61,13 +60,13 @@ export function BetHistory({ history, className }: BetHistoryProps) {
                     </div>
                     <div>
                         <h3 className="text-xl font-display font-black italic uppercase text-white leading-tight">Extraction History</h3>
-                        <p className="text-[10px] text-white/30 font-black uppercase tracking-widest">Protocol Logs • Last 30 Days</p>
+                        <p className="text-[10px] text-white/30 font-black uppercase tracking-widest">Protocol Logs • Full History</p>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-2xl border border-white/5">
                     <Calendar className="h-3 w-3 text-white/20" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Data Retention: 30D</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Data Retention: Full</span>
                 </div>
             </div>
 
@@ -178,10 +177,14 @@ export function BetHistory({ history, className }: BetHistoryProps) {
                 </AnimatePresence>
             </div>
 
-            {recentHistory.length > 10 && (
+            {(hasMore || recentHistory.length > 10) && (
                 <div className="flex justify-center pt-4">
-                    <button className="px-8 py-3 rounded-2xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest text-white/30 hover:text-white hover:bg-primary hover:text-black transition-all">
-                        Load Full Protocol Logs
+                    <button
+                        onClick={onLoadMore}
+                        disabled={!onLoadMore || isLoadingMore || !hasMore}
+                        className="px-8 py-3 rounded-2xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest text-white/30 hover:text-white hover:bg-primary hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        {isLoadingMore ? "Loading..." : "Load Full Protocol Logs"}
                     </button>
                 </div>
             )}

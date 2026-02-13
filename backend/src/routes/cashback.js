@@ -115,6 +115,26 @@ const getReferralBoostTier = (referralVolume) => {
     return tier;
 };
 
+const computeClaimableCashback = (user, boostTier, currentPhase, earningsCapStatus) => {
+    const totalLosses = user.cashbackStats?.totalNetLoss || 0;
+    if (totalLosses <= 0) return 0;
+    if (earningsCapStatus?.hasReachedCap) return 0;
+
+    const boostedDailyCashback = totalLosses * currentPhase.dailyRate * boostTier.multiplier;
+    if (!Number.isFinite(boostedDailyCashback) || boostedDailyCashback <= 0) return 0;
+
+    const lastClaimedAt = user.cashbackStats?.lastClaimedAt
+        ? new Date(user.cashbackStats.lastClaimedAt)
+        : new Date();
+    const lastTs = lastClaimedAt.getTime();
+    const now = Date.now();
+    const elapsedMs = Math.max(0, now - (Number.isNaN(lastTs) ? now : lastTs));
+    const accrued = boostedDailyCashback * (elapsedMs / (24 * 60 * 60 * 1000));
+    const remainingCap = earningsCapStatus?.remainingCap ?? accrued;
+
+    return Math.max(0, Math.min(accrued, remainingCap));
+};
+
 // Check if user has reached their earnings cap
 const checkEarningsCap = async (user, boostTier) => {
     const capInfo = await getEarningsCap(boostTier.multiplier);
@@ -157,6 +177,10 @@ router.get('/status', auth, async (req, res) => {
         // Check activation status
         const totalLosses = user.cashbackStats?.totalNetLoss || 0;
         const isActivated = totalLosses >= ACTIVATION_THRESHOLD;
+        if (isActivated && !user.cashbackStats.lastClaimedAt) {
+            user.cashbackStats.lastClaimedAt = new Date();
+            await user.save();
+        }
 
         // Get sustainability cycle / earnings cap info
         const earningsCapStatus = await checkEarningsCap(user, boostTier);
@@ -176,6 +200,8 @@ router.get('/status', auth, async (req, res) => {
         const daysToRecover = boostedDailyCashback > 0
             ? Math.ceil(remainingToCap / boostedDailyCashback)
             : 0;
+
+        const claimableCashback = computeClaimableCashback(user, boostTier, currentPhase, earningsCapStatus);
 
         res.status(200).json({
             status: 'success',
@@ -228,7 +254,7 @@ router.get('/status', auth, async (req, res) => {
                     boostedDailyRate: currentPhase.dailyRate * boostTier.multiplier,
                     baseDailyCashback: parseFloat(baseDailyCashback.toFixed(2)),
                     boostedDailyCashback: parseFloat(boostedDailyCashback.toFixed(2)),
-                    pending: user.cashbackStats?.pendingCashback || 0,
+                    pending: parseFloat(claimableCashback.toFixed(4)),
                     isPaused: earningsCapStatus.hasReachedCap
                 },
 
@@ -277,6 +303,55 @@ router.get('/status', auth, async (req, res) => {
     }
 });
 
+
+// Claim accrued cashback in real-time
+router.post('/claim', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        const currentPhase = await getCurrentPhase();
+
+        const referrals = await User.find({ _id: { $in: user.referrals } });
+        const referralVolume = referrals.reduce((sum, ref) => {
+            const userTotalDeposits = ref.deposits?.reduce((dSum, d) => dSum + d.amount, 0) || 0;
+            return sum + userTotalDeposits;
+        }, 0);
+
+        const boostTier = getReferralBoostTier(referralVolume);
+        const earningsCapStatus = await checkEarningsCap(user, boostTier);
+
+        const claimable = computeClaimableCashback(user, boostTier, currentPhase, earningsCapStatus);
+        if (!Number.isFinite(claimable) || claimable <= 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'No cashback available to claim yet.'
+            });
+        }
+
+        user.cashbackStats.totalRecovered += claimable;
+        user.realBalances.cashback += claimable;
+        user.cashbackStats.pendingCashback = 0;
+        user.cashbackStats.lastClaimedAt = new Date();
+        user.cashbackStats.todayCashback = (user.cashbackStats.todayCashback || 0) + claimable;
+
+        await user.save();
+
+        return res.status(200).json({
+            status: 'success',
+            message: 'Cashback claimed successfully',
+            data: {
+                claimedAmount: parseFloat(claimable.toFixed(4)),
+                cashbackBalance: parseFloat(user.realBalances.cashback.toFixed(4)),
+                totalRecovered: parseFloat(user.cashbackStats.totalRecovered.toFixed(4))
+            }
+        });
+    } catch (error) {
+        console.error('Cashback claim error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to claim cashback'
+        });
+    }
+});
 
 // Get cashback history
 router.get('/history', auth, async (req, res) => {
@@ -406,9 +481,13 @@ router.post('/record-loss', auth, async (req, res) => {
         }
 
         user.cashbackStats.totalNetLoss += lossAmount;
-        await user.save();
 
         const isNowActivated = user.cashbackStats.totalNetLoss >= ACTIVATION_THRESHOLD;
+        if (isNowActivated && !user.cashbackStats.lastClaimedAt) {
+            user.cashbackStats.lastClaimedAt = new Date();
+        }
+
+        await user.save();
 
         res.status(200).json({
             status: 'success',

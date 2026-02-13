@@ -125,7 +125,10 @@ export default function Home() {
     if (isLoading) return;
     if (typeof window !== "undefined") {
       const lockHome = sessionStorage.getItem("trk_home_override");
-      if (lockHome === "1") return;
+      if (lockHome === "1") {
+        sessionStorage.removeItem("trk_home_override");
+        return;
+      }
     }
     if (!isConnected) return;
     if (user?.role === "admin" || user?.role === "superadmin") {
@@ -185,7 +188,7 @@ export default function Home() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
-              <Link href="/login">
+              <Link href="/auth">
                 <Button size="lg" className="h-16 px-10 text-xl font-black bg-primary text-black rounded-2xl shadow-[0_0_30px_rgba(255,193,7,0.3)] hover:scale-105 transition-transform group">
                   Start Earning Now
                   <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-1 transition-transform" />
@@ -287,7 +290,7 @@ export default function Home() {
               <p className="text-white/60 font-medium max-w-sm">
                 The path is clear. From 100 Practice USDT to your first real withdrawal takes less than 10 minutes.
               </p>
-              <Link href="/login">
+              <Link href="/auth">
                 <Button size="lg" className="h-14 px-8 bg-white text-black font-black hover:bg-primary transition-colors rounded-xl shadow-xl">
                   Follow the Roadmap
                   <ArrowRight className="ml-2 h-5 w-5" />
@@ -476,7 +479,7 @@ export default function Home() {
                   ))}
                 </div>
 
-                <Link href="/login">
+                <Link href="/auth">
                   <Button size="lg" className="h-16 px-10 text-xl font-black bg-purple-600 text-white rounded-2xl shadow-lg shadow-purple-600/20 hover:scale-105 transition-transform group">
                     Buy Tickets Now
                     <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-1 transition-transform" />

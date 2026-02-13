@@ -106,7 +106,7 @@ export default function RoiOnRoiPage() {
         const headers = ["Protocol_Day", "Yield_Value_USDT", "Network_Efficiency", "Status"];
         const rows = yieldData.map((d: any) => [
             d.day,
-            d.value.toFixed(4),
+            (Number(d.value) || 0).toFixed(4),
             "45.2%", // Match UI static efficiency or calculate if available
             "CONFIRMED_ON_CHAIN"
         ]);

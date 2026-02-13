@@ -159,6 +159,11 @@ router.post('/deposit', auth, async (req, res) => {
         // Update Team Volume recursively (Club Income Logic)
         await updateTeamVolume(user._id, amount);
 
+        // Update Direct Level Commissions (Referral Income Logic)
+        const { distributeDepositCommissions } = require('../utils/incomeDistributor');
+        await distributeDepositCommissions(user._id, amount);
+
+
         // Determine what was unlocked
         const newlyUnlocked = [];
         if (user.activation.tier === 'tier1' && user.activation.totalDeposited >= 10 && user.activation.totalDeposited < 100) {

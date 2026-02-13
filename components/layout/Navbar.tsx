@@ -79,12 +79,12 @@ export function Navbar() {
                 <div className="hidden md:flex items-center gap-4">
                     {!isConnected ? (
                         <>
-                            <Link href="/login">
+                            <Link href="/auth">
                                 <Button variant="ghost" className="text-white hover:text-primary font-bold">
                                     Login
                                 </Button>
                             </Link>
-                            <Link href="/login">
+                            <Link href="/auth">
                                 <Button className="bg-primary text-black font-black px-6 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
                                     Launch App
                                     <ArrowRight className="ml-2 h-4 w-4" />
@@ -297,12 +297,12 @@ export function Navbar() {
                             <div className="pt-4 border-t border-white/10 flex flex-col gap-4">
                                 {!isConnected ? (
                                     <>
-                                        <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
+                                        <Link href="/auth" onClick={() => setIsMobileMenuOpen(false)}>
                                             <Button variant="outline" className="w-full h-12 border-primary/20 text-primary font-bold">
                                                 Login
                                             </Button>
                                         </Link>
-                                        <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
+                                        <Link href="/auth" onClick={() => setIsMobileMenuOpen(false)}>
                                             <Button className="w-full h-12 bg-primary text-black font-black">
                                                 Launch App
                                             </Button>

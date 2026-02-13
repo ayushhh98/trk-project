@@ -6,7 +6,16 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+
+// Ensure we load the backend-specific .env regardless of CWD
+const backendEnvPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(backendEnvPath)) {
+    require('dotenv').config({ path: backendEnvPath });
+} else {
+    require('dotenv').config();
+}
 
 const connectDB = require('./config/db');
 const User = require('./models/User');
@@ -34,13 +43,19 @@ const auditRoutes = require('./routes/audit');
 const freeCreditsRoutes = require('./routes/freeCredits');
 const packagesRoutes = require('./routes/packages');
 const rewardsRoutes = require('./routes/rewards');
+const contentRoutes = require('./routes/content');
 
 const app = express();
 const server = http.createServer(app);
+
+// Trust proxy for Render/Vercel (needed for rate limiting)
+app.set('trust proxy', 1);
+
 const io = socketIo(server, {
     cors: {
         origin: function (origin, callback) {
             if (!origin) return callback(null, true);
+            if (process.env.NODE_ENV !== 'production') return callback(null, true);
             const isAllowed = [
                 process.env.FRONTEND_URL,
                 'https://trk-project.vercel.app',
@@ -71,6 +86,7 @@ const allowedOrigins = [
 const corsOptions = {
     origin: function (origin, callback) {
         if (!origin) return callback(null, true);
+        if (process.env.NODE_ENV !== 'production') return callback(null, true);
 
         const isAllowed = [
             process.env.FRONTEND_URL,
@@ -119,18 +135,20 @@ app.use((req, res, next) => {
     next();
 });
 
-// Rate limiting
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // Increased for general API to avoid blocking genuine users
-    message: {
-        status: 'error',
-        message: 'Too many requests from this IP, please try again after 15 minutes'
-    },
-    standardHeaders: true,
-    legacyHeaders: false
-});
-app.use('/api', limiter);
+// Rate limiting (production only)
+if (process.env.NODE_ENV === 'production') {
+    const limiter = rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 200, // Increased for general API to avoid blocking genuine users
+        message: {
+            status: 'error',
+            message: 'Too many requests from this IP, please try again after 15 minutes'
+        },
+        standardHeaders: true,
+        legacyHeaders: false
+    });
+    app.use('/api', limiter);
+}
 
 // Logging
 if (process.env.NODE_ENV === 'development') {
@@ -157,6 +175,12 @@ app.use('/api/cashback', cashbackRoutes);
 app.use('/api/roi-on-roi', roiOnRoiRoutes);
 app.use('/api/club', clubRoutes);
 app.use('/api/lucky-draw', luckyDrawRoutes);
+app.use('/api/content', contentRoutes);
+
+// Initialize jackpot service with Socket.IO
+luckyDrawRoutes.initializeService(io);
+adminRoutes.initializeService(io);
+
 app.use('/api/admin', adminRoutes); // Admin routes (protected by RBAC)
 app.use('/api/audit', auditRoutes); // Audit log routes (admin only)
 

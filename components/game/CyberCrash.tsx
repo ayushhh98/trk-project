@@ -27,7 +27,7 @@ export function CyberCrash({ }: CyberCrashProps) {
     } = useWallet();
     const router = useRouter();
 
-    const [amount, setAmount] = useState(0.5);
+    const [amount, setAmount] = useState(1);
     const [isProcessing, setIsProcessing] = useState(false);
     const [multiplier, setMultiplier] = useState(1.0);
     const [isCrashed, setIsCrashed] = useState(false);
@@ -41,8 +41,8 @@ export function CyberCrash({ }: CyberCrashProps) {
     const startRound = () => {
         if (isProcessing) return;
 
-        if (amount < 0.5) {
-            toast.warning("Minimum entry is 0.5 SC");
+        if (amount < 1.0) {
+            toast.warning("Minimum entry is 1.0 SC");
             return;
         }
 

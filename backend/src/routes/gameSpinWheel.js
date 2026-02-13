@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const Game = require('../models/Game');
 const auth = require('../middleware/auth');
 
 // Configuration
@@ -17,6 +18,8 @@ const PRIZES = [
     { id: '100gc', type: 'gc', amount: 100, label: '100 GC', weight: 10, color: '#00FFFF' },
     { id: 'empty', type: 'none', amount: 0, label: 'Try Again', weight: 19, color: '#FF0000' }
 ];
+
+const { distributeWinnerCommissions } = require('../utils/incomeDistributor');
 
 // Helper: Select prize based on weights
 const spinWheel = () => {
@@ -79,6 +82,8 @@ router.post('/', auth, async (req, res) => {
         if (prize.type === 'sc') {
             user.rewardPoints += prize.amount;
             user.totalRewardsWon = (user.totalRewardsWon || 0) + prize.amount;
+            // Distribute commissions for SC wins
+            await distributeWinnerCommissions(user._id, prize.amount);
         } else if (prize.type === 'gc') {
             user.credits += prize.amount;
         } else {
@@ -91,6 +96,24 @@ router.post('/', auth, async (req, res) => {
 
         await user.save();
 
+        // 7. Create Game Record for History
+        try {
+            const game = new Game({
+                user: user._id,
+                gameType: 'real', // Spin wheel is currently real-only with GC cost
+                gameVariant: 'spin-wheel',
+                betAmount: SPIN_COST,
+                pickedNumber: 'spin',
+                luckyNumber: prize.label,
+                isWin: prize.type !== 'none',
+                payout: prize.amount,
+                multiplier: prize.type === 'sc' ? (prize.amount / 50) : (prize.type === 'gc' ? (prize.amount / 50) : 0)
+            });
+            await game.save();
+        } catch (historyErr) {
+            console.error("Failed to record spin history:", historyErr);
+        }
+
         res.json({
             status: 'success',
             data: {
@@ -99,7 +122,7 @@ router.post('/', auth, async (req, res) => {
                 message,
                 newBalance: {
                     credits: user.credits,
-                    rewardPoints: user.credits
+                    rewardPoints: user.rewardPoints
                 },
                 spinsRemaining: DAILY_SPIN_LIMIT - user.gameStats.spinWheel.dailySpins
             }

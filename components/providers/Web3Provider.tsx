@@ -62,6 +62,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
                 transports: ['websocket', 'polling'],
                 reconnectionAttempts: 10,
                 reconnectionDelay: 1000,
+                forceNew: true,
                 auth: (cb) => {
                     const token = localStorage.getItem('trk_token');
                     cb({ token });
@@ -74,8 +75,18 @@ export function Web3Provider({ children }: { children: ReactNode }) {
             });
 
             socket.on("connect_error", (err) => {
-                // If auth error, try reconnecting without token (guest mode) or refresh
                 console.warn("🔌 Socket Connection Warning:", err.message);
+                // Attempt transport fallback if websocket fails
+                const transports = socket?.io?.opts?.transports || [];
+                const hasWebsocket = transports.some((transport: any) =>
+                    typeof transport === "string"
+                        ? transport === "websocket"
+                        : transport?.name === "websocket"
+                );
+                const ioOptions = socket?.io?.opts;
+                if (hasWebsocket && ioOptions) {
+                    ioOptions.transports = ['polling'];
+                }
             });
 
             socket.on("disconnect", (reason) => {

@@ -1,10 +1,11 @@
 const express = require('express');
 const User = require('../models/User');
+const Commission = require('../models/Commission');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
 
-// Administrative Mock State for Practice Referral Rates
+// Administrative Mock State for Practice Referral Rates (kept for reference/admin control)
 let PRACTICE_REFERRAL_RATES = {
     1: { percent: 10, usdt: 10 },
     '2-5': { percent: 2, usdt: 2 },
@@ -50,7 +51,7 @@ const getTeamStatsRealTime = async (userId, maxLevels = 100) => {
             active: 0,
             reward: rate.usdt,
             percent: rate.percent,
-            totalEarned: 0 // This would be calculated from transactions in production
+            totalEarned: 0
         };
 
         const members = await User.find({ referredBy: { $in: currentLevelIds } })
@@ -71,8 +72,7 @@ const getTeamStatsRealTime = async (userId, maxLevels = 100) => {
             if (member.activation?.tier === 'tier1') stats.tier1Count++;
             if (member.activation?.tier === 'tier2') stats.tier2Count++;
 
-            // Mocking the 'reward' earned from this member's practice activation for visualization
-            levelData.totalEarned += rate.usdt;
+            levelData.totalEarned += rate.usdt; // Visualization only
 
             nextLevelIds.push(member._id);
         }
@@ -98,16 +98,19 @@ router.get('/stats', auth, async (req, res) => {
         // Calculate real-time team stats
         const realStats = await getTeamStatsRealTime(user._id);
 
-        // Calculate real-time total earnings from all referral-based streams
-        // Simplified for Sweeps model (Reward Points)
-        const totalReferralEarnings = user.totalRewardsWon || 0;
+        // Calculate real-time total earnings from referral-based streams
+        const totalReferralEarnings =
+            (user.realBalances?.directLevel || 0) +
+            (user.realBalances?.winners || 0) ||
+            user.rewardPoints ||
+            0;
 
         // Fetch detailed Level 1 data
         const level1Members = await User.find({ referredBy: user._id })
-            .select('walletAddress activation createdAt lastLoginAt')
+            .select('walletAddress activation createdAt lastLoginAt name email referralCode')
             .limit(20);
 
-        // Real Growth Data (Mocking last 7 days but can be derived from team member createdAt)
+        // Real Growth Data (Mocking last 7 days but can be derived in future)
         const growthData = [
             { date: 'Mon', newMembers: 2, volume: 200 },
             { date: 'Tue', newMembers: 5, volume: 500 },
@@ -122,7 +125,7 @@ router.get('/stats', auth, async (req, res) => {
             status: 'success',
             data: {
                 referralCode: user.referralCode,
-                referralLink: `https://trk.game/ref/${user.referralCode}`,
+                referralLink: `https://trk.game/?ref=${user.referralCode}`,
                 directReferrals: user.referrals?.length || 0,
                 maxDirectReferrals: MAX_DIRECT_REFERRALS,
                 totals: {
@@ -133,12 +136,25 @@ router.get('/stats', auth, async (req, res) => {
                     tier2Percent: realStats.totalMembers > 0 ? Math.round((realStats.tier2Count / realStats.totalMembers) * 100) : 0
                 },
                 levelStats: realStats.levelStats,
-                level1Details: level1Members.map(m => ({
-                    address: `${m.walletAddress.slice(0, 6)}...${m.walletAddress.slice(-4)}`,
-                    tier: m.activation?.tier || 'none',
-                    joined: m.createdAt,
-                    active: m.lastLoginAt && (new Date() - m.lastLoginAt < 24 * 60 * 60 * 1000)
-                })),
+                level1Details: level1Members.map(m => {
+                    const walletShort = m.walletAddress
+                        ? `${m.walletAddress.slice(0, 6)}...${m.walletAddress.slice(-4)}`
+                        : 'N/A';
+                    const email = m.email || '';
+                    const maskedEmail = email
+                        ? `${email.slice(0, 2)}***@${email.split('@')[1] || ''}`
+                        : '';
+                    return {
+                        name: m.name || '',
+                        email: maskedEmail,
+                        referralCode: m.referralCode || '',
+                        address: walletShort,
+                        tier: m.activation?.tier || 'none',
+                        joined: m.createdAt,
+                        lastActive: m.lastLoginAt,
+                        active: m.lastLoginAt && (new Date() - m.lastLoginAt < 24 * 60 * 60 * 1000)
+                    };
+                }),
                 growthData,
                 practiceRewardStructure: Object.entries(PRACTICE_REFERRAL_RATES).map(([key, val]) => ({
                     levels: key === '1' ? 'Level 1' : `Level ${key}`,
@@ -200,15 +216,34 @@ router.post('/apply', auth, async (req, res) => {
 // Get commissions history
 router.get('/commissions', auth, async (req, res) => {
     try {
-        const commissions = [
-            { user: '0x7a3...9f2', level: 1, amount: 10.00, time: '2h ago', status: 'Credited' },
-            { user: '0x8b4...3e1', level: 2, amount: 2.00, time: '5h ago', status: 'Credited' },
-            { user: '0x2c5...7d8', level: 1, amount: 10.00, time: '8h ago', status: 'Credited' },
-            { user: '0x9e6...4a2', level: 3, amount: 2.00, time: '1d ago', status: 'Credited' },
-            { user: '0x1f7...5c3', level: 2, amount: 2.00, time: '2d ago', status: 'Credited' }
-        ];
+        const commissionsData = await Commission.find({ user: req.user.id })
+            .populate('fromUser', 'walletAddress')
+            .sort({ createdAt: -1 })
+            .limit(50);
+
+        const commissions = commissionsData.map(c => {
+            // Calculate time ago
+            const diff = Date.now() - new Date(c.createdAt).getTime();
+            const minutes = Math.floor(diff / 60000);
+            let timeAgo = 'Just now';
+            if (minutes > 0) {
+                if (minutes < 60) timeAgo = `${minutes}m ago`;
+                else if (minutes < 1440) timeAgo = `${Math.floor(minutes / 60)}h ago`;
+                else timeAgo = `${Math.floor(minutes / 1440)}d ago`;
+            }
+
+            return {
+                user: c.fromUser ? `${c.fromUser.walletAddress.slice(0, 6)}...${c.fromUser.walletAddress.slice(-4)}` : 'Unknown',
+                level: c.level,
+                amount: c.amount,
+                time: timeAgo,
+                status: c.status.charAt(0).toUpperCase() + c.status.slice(1)
+            };
+        });
+
         res.status(200).json({ status: 'success', data: { commissions } });
     } catch (error) {
+        console.error('Get commissions error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to get commissions' });
     }
 });
