@@ -43,12 +43,11 @@ export default function AdminLoginPage() {
     }, [isLoading, isAdmin, token, user, router]);
 
     const handleWalletLogin = async () => {
-        console.log("Admin Login clicked. isLoading:", isLoading);
         if (isLoading) return;
 
         try {
             // Use the universal modal to avoid connector-specific failures
-            console.log("Calling connect('Other')...");
+            // console.log("Calling connect('Other')...");
             await connect("Other");
         } catch (e: any) {
             console.error("Connection failed:", e);

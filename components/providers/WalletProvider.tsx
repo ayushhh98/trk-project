@@ -703,7 +703,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         try {
             // 1. Context Stability Check
             if (!walletClient) {
-                console.log("Wallet client not ready yet. Continuing with signer...");
+                // console.log("Wallet client not ready yet. Continuing with signer...");
             }
 
             // 2. Network Enforcement (BSC)
@@ -723,7 +723,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             }
 
             // 3. Fetch Nonce
-            console.log("Fetching security nonce...");
             const referrerCode = localStorage.getItem("trk_referrer_code");
 
             const nonceRes = await authAPI.getNonce(wagmiAddress, referrerCode || undefined);
@@ -733,7 +732,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             }
 
             // 4. Request Signature
-            console.log("Requesting signature...");
             toast.loading("Awaiting Quantum Signature...", {
                 id: toastId,
                 description: "Please confirm the authentication request in your wallet."
@@ -757,7 +755,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             if (timeoutId) clearTimeout(timeoutId);
 
             // 5. Verification
-            console.log("Verifying signature...");
             toast.loading("Decrypting Identity...", { id: toastId });
 
             const verifyRes = await authAPI.verify(wagmiAddress, signature);
@@ -934,13 +931,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
 
         setIsLoading(true);
-        console.log("Production Login Request:", walletType);
+        // console.log("Production Login Request:", walletType);
         setWalletConnectRequested(true);
 
         try {
             // 0. Already connected? Trigger auth directly and skip modal.
             if (isWagmiConnected && wagmiAddress) {
-                console.log("Wallet already connected, proceeding to auth...");
+                // console.log("Wallet already connected, proceeding to auth...");
                 await login();
                 return;
             }
@@ -956,7 +953,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             }
 
             // 2. Identify Connector
-            console.log("Available Connectors:", connectors.map(c => ({ id: c.id, name: c.name })));
+            // console.log("Available Connectors:", connectors.map(c => ({ id: c.id, name: c.name })));
             let connector;
 
             if (walletType === 'Trust Wallet') {
