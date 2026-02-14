@@ -6,7 +6,7 @@ const { logger } = require('../utils/logger');
  * Supported headers: 'cf-ipcountry' (Cloudflare), 'x-vercel-ip-country' (Vercel)
  */
 
-const RESTRICTED_COUNTRIES = (process.env.RESTRICTED_COUNTRIES || 'IN,US,UK,AU').split(',').map(c => c.trim().toUpperCase());
+const RESTRICTED_COUNTRIES = (process.env.RESTRICTED_COUNTRIES || '').split(',').filter(c => c.trim()).map(c => c.trim().toUpperCase());
 
 const geoBlock = (req, res, next) => {
     // 1. Get country code from headers

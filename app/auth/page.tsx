@@ -94,30 +94,40 @@ export default function AuthPage() {
                         </p>
                     </div>
 
-                    {/* Connect Button */}
-                    <Button
-                        onClick={handleWalletConnect}
-                        className="w-full h-14 rounded-xl bg-white text-black hover:bg-primary font-black uppercase text-sm tracking-wider shadow-[0_0_30px_rgba(255,255,255,0.2)] transition-all"
-                    >
-                        <Wallet className="h-5 w-5 mr-2" />
-                        Connect Wallet
-                    </Button>
+                    {/* Wallet Actions */}
+                    <div className="space-y-3">
+                        <Button
+                            onClick={() => connect("MetaMask")}
+                            className="w-full h-12 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:opacity-90 font-bold shadow-lg shadow-orange-500/20"
+                        >
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg" className="w-6 h-6 mr-3" alt="MetaMask" />
+                            MetaMask
+                        </Button>
 
-                    {/* Supported Wallets */}
-                    <div className="mt-8 pt-8 border-t border-white/5">
-                        <p className="text-[10px] uppercase tracking-widest text-white/30 text-center mb-4 font-black">
-                            Supported Wallets
-                        </p>
-                        <div className="flex justify-center gap-4">
-                            <div className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 font-bold">
-                                MetaMask
-                            </div>
-                            <div className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 font-bold">
+                        <div className="grid grid-cols-2 gap-3">
+                            <Button
+                                onClick={() => connect("Trust Wallet")}
+                                className="h-12 rounded-xl bg-[#0500FF] text-white hover:opacity-90 font-bold shadow-lg shadow-blue-500/20 border border-white/10"
+                            >
+                                <svg className="w-6 h-6 mr-2" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M5.85 28.5L25.65 20.3L29.35 15.6V3.5H2.65V15.6L5.85 28.5Z" fill="#ffffff" />
+                                    <path d="M16 32L2.65 15.6V2H29.35V15.6L16 32Z" fill="#3275BB" />
+                                    <path d="M16 30.2L4.5 15.9V4H27.5V15.9L16 30.2Z" fill="#ffffff" />
+                                    <path d="M11 12H21V14H11V12Z" fill="#0500FF" />
+                                </svg>
+                                {/* Using generic Shield icon for Trust Wallet representation if SVG fails, but trying inline SVG approx first or just text/icon from library */}
                                 Trust Wallet
-                            </div>
-                            <div className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 font-bold">
+                            </Button>
+
+                            <Button
+                                onClick={() => connect("WalletConnect")}
+                                className="h-12 rounded-xl bg-[#3B99FC] text-white hover:opacity-90 font-bold shadow-lg shadow-blue-400/20 border border-white/10"
+                            >
+                                <svg className="w-6 h-6 mr-2" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17L7 12H10V8H14V12H17L12 17Z" fill="currentColor" />
+                                </svg>
                                 WalletConnect
-                            </div>
+                            </Button>
                         </div>
                     </div>
 

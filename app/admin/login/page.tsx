@@ -35,17 +35,23 @@ export default function AdminLoginPage() {
     useEffect(() => {
         if (isLoading) return;
         if (isAdmin) {
-            router.push("/admin");
+            toast.success("Welcome back, Commander.");
+            router.replace("/admin");
         } else if (token && user && !isAdmin) {
             setShowDenied(true);
         }
     }, [isLoading, isAdmin, token, user, router]);
 
     const handleWalletLogin = async () => {
+        console.log("Admin Login clicked. isLoading:", isLoading);
+        if (isLoading) return;
+
         try {
             // Use the universal modal to avoid connector-specific failures
+            console.log("Calling connect('Other')...");
             await connect("Other");
         } catch (e: any) {
+            console.error("Connection failed:", e);
             toast.error(e?.message || "Wallet connection failed");
         }
     };
@@ -103,12 +109,33 @@ export default function AdminLoginPage() {
                         </p>
                     </div>
 
+                    {isAdmin && (
+                        <div className="mb-6 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm px-4 py-3 rounded-xl flex items-center justify-center gap-2 animate-pulse">
+                            <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                            </span>
+                            <span>Redirecting to Dashboard...</span>
+                        </div>
+                    )}
 
+
+
+                    {/* Status Messages */}
+                    {isLoading && (
+                        <div className="mb-6 text-emerald-400 text-sm flex items-center justify-center gap-2 animate-pulse">
+                            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                            <span>Verifying Credentials...</span>
+                        </div>
+                    )}
 
                     {showDenied && (
-                        <div className="mb-6 border border-red-500/30 bg-red-500/10 text-red-200 text-sm px-4 py-3 rounded-xl flex items-center gap-3">
-                            <Lock className="h-4 w-4 shrink-0" />
-                            <span>Access denied. Admin privileges required.</span>
+                        <div className="mb-6 border border-red-500/50 bg-red-500/20 text-red-100 text-sm px-4 py-4 rounded-xl flex items-center gap-3 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                            <Lock className="h-5 w-5 shrink-0 text-red-500" />
+                            <div className="flex flex-col text-left">
+                                <span className="font-bold text-red-400">Access Denied</span>
+                                <span className="text-xs opacity-80">Wallet {user?.walletAddress?.slice(0, 6)}...{user?.walletAddress?.slice(-4)} is not authorized.</span>
+                            </div>
                         </div>
                     )}
 
@@ -116,10 +143,20 @@ export default function AdminLoginPage() {
                     {/* Connect Button */}
                     <Button
                         onClick={handleWalletLogin}
-                        className="w-full h-14 rounded-xl bg-white text-black hover:bg-emerald-500 font-black uppercase text-sm tracking-wider shadow-[0_0_30px_rgba(255,255,255,0.2)] transition-all"
+                        disabled={isLoading}
+                        className="w-full h-14 rounded-xl bg-white text-black hover:bg-emerald-500 disabled:bg-white/50 disabled:cursor-not-allowed font-black uppercase text-sm tracking-wider shadow-[0_0_30px_rgba(255,255,255,0.2)] transition-all"
                     >
-                        <Wallet className="h-5 w-5 mr-2" />
-                        Connect Wallet
+                        {isLoading ? (
+                            <>
+                                <span className="animate-spin mr-2 h-5 w-5 border-2 border-black border-t-transparent rounded-full" />
+                                Checking System...
+                            </>
+                        ) : (
+                            <>
+                                <Wallet className="h-5 w-5 mr-2" />
+                                Connect Wallet
+                            </>
+                        )}
                     </Button>
 
                     {/* Admin Info */}

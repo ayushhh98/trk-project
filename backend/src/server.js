@@ -59,8 +59,9 @@ const io = socketIo(server, {
             const isAllowed = [
                 process.env.FRONTEND_URL,
                 'https://trk-project.vercel.app',
+                'https://trk-project.onrender.com',
                 'https://trk-game.com'
-            ].indexOf(origin) !== -1 || (process.env.NODE_ENV !== 'production' && (origin.startsWith('http://localhost') || origin.endsWith('.vercel.app')));
+            ].indexOf(origin) !== -1 || (process.env.NODE_ENV !== 'production' && (origin.startsWith('http://localhost') || origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')));
 
             if (isAllowed) {
                 callback(null, true);
@@ -91,8 +92,9 @@ const corsOptions = {
         const isAllowed = [
             process.env.FRONTEND_URL,
             'https://trk-project.vercel.app',
+            'https://trk-project.onrender.com',
             'https://trk-game.com'
-        ].indexOf(origin) !== -1 || (process.env.NODE_ENV !== 'production' && (origin.startsWith('http://localhost') || origin.endsWith('.vercel.app')));
+        ].indexOf(origin) !== -1 || (process.env.NODE_ENV !== 'production' && (origin.startsWith('http://localhost') || origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')));
 
         if (isAllowed) {
             callback(null, true);

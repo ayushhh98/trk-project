@@ -20,8 +20,15 @@ const initWeb3Modal = async () => {
                 projectId,
                 enableAnalytics: false,
                 enableOnramp: true,
-                allWallets: 'HIDE',
-                enableEIP6963: true,
+                allWallets: 'SHOW',
+                includeWalletIds: [
+                    // Trust Wallet (WalletConnect Explorer ID)
+                    '4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0'
+                ],
+                featuredWalletIds: [
+                    '4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0'
+                ],
+                enableEIP6963: false,
                 themeVariables: {
                     '--w3m-accent': '#10b981', // Emerald 500
                     '--w3m-border-radius-master': '1px',
@@ -54,6 +61,17 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     const [socketReady, setSocketReady] = useState(false);
 
     useEffect(() => {
+        const originalWarn = console.warn;
+        console.warn = (...args: any[]) => {
+            const text = args
+                .map(arg => (typeof arg === "string" ? arg : ""))
+                .join(" ");
+            if (text.includes("w3m-connecting") || text.includes("lit.dev/msg/change-in-update")) {
+                return;
+            }
+            originalWarn(...args);
+        };
+
         const socketUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || "http://localhost:5000";
 
         if (!socket) {
@@ -118,6 +136,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         window.addEventListener('trk_auth_change', handleAuthChange);
 
         return () => {
+            console.warn = originalWarn;
             window.removeEventListener('storage', handleStorageChange);
             window.removeEventListener('trk_auth_change', handleAuthChange);
             if (socket) {

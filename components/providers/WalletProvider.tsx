@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { authAPI, userAPI, gameAPI, depositAPI, packagesAPI, getToken, removeToken, getStoredUser, setStoredUser, setToken as setApiToken } from "@/lib/api";
 import { useAccount, useConnect, useDisconnect, useSignMessage, useBalance, useSwitchChain, useWriteContract, useWalletClient, useReadContract, usePublicClient } from "wagmi";
 import { openWeb3Modal } from "@/components/providers/Web3Provider";
@@ -165,6 +165,9 @@ const PREFERRED_WALLET_KEY = "trk_preferred_wallet";
 const MAX_RECENT_WALLETS = 5;
 const LOGIN_COOLDOWN_KEY = "trk_login_cooldown_until";
 const LOGIN_THROTTLE_MS = 4000;
+const LOGIN_SCOPE_KEY = "trk_login_scope";
+const LOGIN_SESSION_SCOPE_KEY = "trk_login_session_scope";
+const SIGNATURE_TIMEOUT_MS = 180000;
 const WALLET_CONNECT_REQUEST_KEY = "trk_wallet_connect_requested";
 
 const normalizeWalletList = (items: unknown[]) => {
@@ -248,15 +251,53 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const [totalProfit, setTotalProfit] = useState(0);
 
     const router = useRouter();
+    const pathname = usePathname();
     const wagmiAddressRef = React.useRef<typeof wagmiAddress>(wagmiAddress);
     const wagmiConnectedRef = React.useRef(isWagmiConnected);
     const lastLoginAttemptRef = React.useRef(0);
     const onchainSyncInFlightRef = React.useRef(false);
     const lastOnchainSyncRef = React.useRef(0);
 
+    const getLoginScope = () => {
+        if (typeof window === "undefined") return "user";
+        const path = window.location.pathname || "";
+        if (path.startsWith("/admin")) return "admin";
+        const scope = localStorage.getItem(LOGIN_SCOPE_KEY);
+        return scope === "admin" ? "admin" : "user";
+    };
+
+    const setLoginScope = (scope: "admin" | "user") => {
+        if (typeof window === "undefined") return;
+        localStorage.setItem(LOGIN_SCOPE_KEY, scope);
+    };
+
+    const getSessionScope = () => {
+        if (typeof window === "undefined") return "user";
+        const scope = localStorage.getItem(LOGIN_SESSION_SCOPE_KEY);
+        return scope === "admin" ? "admin" : "user";
+    };
+
+    const setSessionScope = (scope: "admin" | "user") => {
+        if (typeof window === "undefined") return;
+        localStorage.setItem(LOGIN_SESSION_SCOPE_KEY, scope);
+    };
+
+    const clearSessionScope = () => {
+        if (typeof window === "undefined") return;
+        localStorage.removeItem(LOGIN_SESSION_SCOPE_KEY);
+    };
+
     useEffect(() => {
         setIsHydrated(true);
     }, []);
+
+    useEffect(() => {
+        if (!pathname) return;
+        const nextScope = pathname.startsWith("/admin") ? "admin" : "user";
+        setLoginScope(nextScope);
+        // We do NOT clear session here. Admins should be able to visit user pages.
+        // Component-level protection (AdminGuard) should handle access control.
+    }, [pathname]);
 
     const hasRealAccess = React.useMemo(() => {
         const totalDeposited = user?.activation?.totalDeposited || 0;
@@ -454,6 +495,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // Check for existing session on mount
     useEffect(() => {
         const initAuth = async () => {
+            const currentScope = getLoginScope();
+            const sessionScope = getSessionScope();
+            if (sessionScope && sessionScope !== currentScope) {
+                removeToken();
+                setUser(null);
+                setToken(null);
+                clearSessionScope();
+            }
+
             const storedToken = getToken();
             const storedUser = getStoredUser();
 
@@ -589,14 +639,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         // ALREADY AUTHENTICATED CHECK (state or persisted)
         const storedToken = getToken();
         const storedUser = getStoredUser();
-        const effectiveToken = token || storedToken;
-        const effectiveUser = user || storedUser;
+        let effectiveToken = token || storedToken;
+        let effectiveUser = user || storedUser;
 
-        // If we have a token and user, check if we need to do anything
+        const loginScope = getLoginScope();
+        const sessionScope = getSessionScope();
+
+        if (sessionScope && sessionScope !== loginScope) {
+            removeToken();
+            setUser(null);
+            setToken(null);
+            clearSessionScope();
+            effectiveToken = null;
+            effectiveUser = null;
+        }
+
+        const requiresAdmin = loginScope === "admin";
+        const isEffectiveAdmin = effectiveUser?.role === "admin" || effectiveUser?.role === "superadmin";
+
+        if (requiresAdmin && effectiveUser && !isEffectiveAdmin) {
+            removeToken();
+            setUser(null);
+            setToken(null);
+            clearSessionScope();
+            effectiveToken = null;
+            effectiveUser = null;
+        }
+
         if (effectiveToken && effectiveUser) {
             // If the valid session matches the connected wallet, we can reuse it.
             if (effectiveUser.walletAddress?.toLowerCase() === wagmiAddress.toLowerCase()) {
-                if (!user) {
+                if (!user || token !== effectiveToken) {
                     setUser(effectiveUser);
                     setToken(effectiveToken);
 
@@ -611,20 +684,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                         });
                     }
                 }
+            }
 
-                // If the user explicitly clicked connect (e.g., admin login), re-verify to refresh role/session.
-                if (!connectRequested && !isSwitchingWallet) {
-                    setWalletConnectRequested(false);
-                    return;
-                }
-            } else {
-                // If switching wallet, we proceed to signature.
-                // Otherwise, if connect wasn't explicitly requested, we don't auto-switch.
-                if (!isSwitchingWallet && !connectRequested) return;
+            // If the user explicitly clicked connect (e.g., admin login), re-verify to refresh role/session.
+            if (!connectRequested && !isSwitchingWallet) {
+                setWalletConnectRequested(false);
+                return;
             }
         } else {
-            // No session. Only auto-login if the user explicitly clicked connect
-            if (!connectRequested && !isSwitchingWallet) return;
+            // If switching wallet, we proceed to signature.
+            // Otherwise, if connect wasn't explicitly requested, we don't auto-switch.
+            if (!isSwitchingWallet && !connectRequested) return;
         }
 
         loginInProgressRef.current = true;
@@ -633,10 +703,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         try {
             // 1. Context Stability Check
             if (!walletClient) {
-                console.log("Waiting for wallet client...");
-                loginInProgressRef.current = false;
-                toast.dismiss(toastId);
-                return;
+                console.log("Wallet client not ready yet. Continuing with signer...");
             }
 
             // 2. Network Enforcement (BSC)
@@ -675,10 +742,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             // Small cooldown for provider stability after potential network switch
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            const signature = await signMessageAsync({
+            const signPromise = signMessageAsync({
                 message: nonceRes.data.message,
                 account: wagmiAddress as `0x${string}`,
             });
+
+            let timeoutId: ReturnType<typeof setTimeout> | undefined;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error("Signature Request Timed Out")), SIGNATURE_TIMEOUT_MS);
+            });
+
+            // @ts-ignore
+            const signature = await Promise.race([signPromise, timeoutPromise]);
+            if (timeoutId) clearTimeout(timeoutId);
 
             // 5. Verification
             console.log("Verifying signature...");
@@ -690,6 +766,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             if (verifyRes.status === 'success' && verifiedToken) {
                 const newToken = verifiedToken;
                 const userData = verifyRes.data.user;
+                const currentScope = getLoginScope();
+                const requiresAdminScope = currentScope === "admin";
+                const isAdminRole = userData?.role === 'admin' || userData?.role === 'superadmin';
+
+                if (requiresAdminScope && !isAdminRole) {
+                    removeToken();
+                    setUser(null);
+                    setToken(null);
+                    clearSessionScope();
+                    toast.error("Admin access required.", {
+                        description: "This wallet is not authorized for admin login."
+                    });
+                    router.replace('/admin/login?reason=unauthorized');
+                    return;
+                }
 
                 // Sync Internal State
                 setToken(newToken);
@@ -704,6 +795,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 setApiToken(newToken);
                 setStoredUser(userData);
                 localStorage.setItem("trk_wallet_address", wagmiAddress);
+                setSessionScope(currentScope);
 
                 // Notify other modules (Socket, etc)
                 window.dispatchEvent(new CustomEvent('trk_auth_change'));
@@ -715,29 +807,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 setWalletConnectRequested(false);
                 localStorage.removeItem(LOGIN_COOLDOWN_KEY);
 
-                // For production stability, we trigger a soft refresh of the dashboard data
-                // instead of a hard location reload if we're already on a dashboard-like page,
-                // otherwise we navigate.
+                // Route based on login scope to keep admin/user sessions isolated.
                 const path = window.location.pathname;
-                const isAdminRole = userData?.role === 'admin' || userData?.role === 'superadmin';
-                if (path.startsWith('/admin')) {
-                    if (isAdminRole) {
-                        router.push('/admin');
-                    } else {
-                        if (typeof window !== "undefined") {
-                            sessionStorage.setItem("trk_home_override", "1");
-                        }
-                        router.push('/');
-                    }
-                } else if (path === '/' || path === '/auth') {
-                    if (isAdminRole) {
-                        router.push('/admin');
-                    } else {
-                        if (typeof window !== "undefined") {
-                            sessionStorage.setItem("trk_home_override", "1");
-                        }
-                        router.push('/');
-                    }
+                const isAdminLoginScope = currentScope === "admin";
+                const isAuthGate = path === "/" || path === "/auth" || path === "/admin/login";
+
+                if (isAdminLoginScope) {
+                    router.replace("/admin");
+                } else if (isAuthGate) {
+                    router.replace("/dashboard");
                 } else {
                     refreshUser();
                 }
@@ -756,10 +834,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             const isNetworkErr = error.message?.includes("Gateway") || error.message?.includes("fetch");
             const isRateLimited = error.message?.toLowerCase().includes("too many requests")
                 || error.message?.includes("429");
+            const isSignatureTimeout = error.message?.includes("Signature Request Timed Out");
 
             if (isUserReject) {
                 toast.info("Uplink Cancelled", { description: "You rejected the signature request." });
                 setWalletConnectRequested(false);
+            } else if (isSignatureTimeout) {
+                toast.error("Signature timed out", {
+                    description: "No signature received. Open your wallet and approve the request.",
+                    action: {
+                        label: "Open Wallet",
+                        onClick: () => {
+                            setWalletConnectRequested(true);
+                            void openWeb3Modal().then(() => {
+                                if (wagmiConnectedRef.current && wagmiAddressRef.current) {
+                                    void login();
+                                }
+                            });
+                        }
+                    }
+                });
             } else if (isRateLimited) {
                 const cooldownMs = 15 * 60 * 1000;
                 localStorage.setItem(LOGIN_COOLDOWN_KEY, String(Date.now() + cooldownMs));
@@ -821,19 +915,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setHistoryPage(1);
         setHasMoreHistory(true);
         setIsHistoryLoading(false);
+        clearSessionScope();
         removeToken();
     }, []);
 
     const connect = async (walletType: string) => {
         // Prevent concurrent connection attempts
-        if (isLoading || loginInProgressRef.current) return;
+        if (loginInProgressRef.current) {
+            toast.info("Login already in progress", {
+                description: "Check your wallet for the signature request."
+            });
+            return;
+        }
+
+        if (typeof window !== "undefined") {
+            const path = window.location.pathname || "";
+            setLoginScope(path.startsWith("/admin") ? "admin" : "user");
+        }
 
         setIsLoading(true);
         console.log("Production Login Request:", walletType);
         setWalletConnectRequested(true);
 
         try {
-            // WalletConnect / Modal Fallback
+            // 0. Already connected? Trigger auth directly and skip modal.
+            if (isWagmiConnected && wagmiAddress) {
+                console.log("Wallet already connected, proceeding to auth...");
+                await login();
+                return;
+            }
+
+            // 1. Explicit Modal/WalletConnect request
             if (walletType === 'Other' || walletType === 'WalletConnect') {
                 await openWeb3Modal();
                 // If a wallet is already connected, trigger auth explicitly.
@@ -843,36 +955,52 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 return;
             }
 
-            // Already connected? Trigger auth directly.
-            if (isWagmiConnected && wagmiAddress) {
-                await login();
-                return;
+            // 2. Identify Connector
+            console.log("Available Connectors:", connectors.map(c => ({ id: c.id, name: c.name })));
+            let connector;
+
+            if (walletType === 'Trust Wallet') {
+                // Prioritize the specific injected connector for Trust
+                connector = connectors.find(c => c.id === 'trust' || c.id === 'app.trustwallet');
+                // Fallback to name check if ID lookup fails
+                if (!connector) connector = connectors.find(c => c.name.toLowerCase().includes('trust'));
+            } else if (walletType === 'MetaMask') {
+                connector = connectors.find(c =>
+                    c.id === 'metaMask'
+                    || c.id === 'io.metamask'
+                    || c.id === 'injected'
+                    || c.name.toLowerCase().includes('metamask')
+                );
             }
 
-            // Precise Connector Selection
-            let connector = connectors.find(c => c.id === 'metaMask' || c.id === 'io.metamask');
-            if (!connector) connector = connectors.find(c => c.id === 'injected');
-
-            if (!connector) {
-                console.warn("Direct connector not found. Using discovery modal.");
-                await openWeb3Modal();
-                return;
-            }
-
-            // Attempt Secure Handshake
-            const toastId = toast.loading(`Connecting to ${walletType}...`);
-            try {
-                await connectAsync({ connector });
-                // We don't call login() here because the useEffect on isWagmiConnected will trigger it
-            } catch (err: any) {
-                toast.dismiss(toastId);
-                if (err.code === 4001 || err.message?.includes("User rejected")) {
-                    toast.info("Connection Cancelled");
-                } else {
-                    console.error("Connector link failed. Falling back to universal modal.", err);
-                    await openWeb3Modal();
+            // 3. Connector Found? Connect.
+            if (connector) {
+                // Attempt Secure Handshake
+                const toastId = toast.loading(`Connecting to ${walletType}...`);
+                try {
+                    await connectAsync({ connector });
+                    // login() will be triggered by useEffect when isWagmiConnected changes
+                } catch (err: any) {
+                    toast.dismiss(toastId);
+                    if (err.code === 4001 || err.message?.includes("User rejected")) {
+                        toast.info("Connection Cancelled");
+                    } else {
+                        console.error("Connector link failed. Falling back to universal modal.", err);
+                        await openWeb3Modal();
+                    }
                 }
+                return;
             }
+
+            // 4. Fallback if connector not found (e.g. Trust selected but not installed)
+            console.warn(`Connector for ${walletType} not found. Using Web3Modal.`);
+            await openWeb3Modal();
+
+            // Should be handled by useEffect, but good to have fallback checks
+            if (wagmiConnectedRef.current && wagmiAddressRef.current) {
+                await login();
+            }
+
         } catch (error) {
             console.error("Critical Connection Error:", error);
             toast.error("Handshake Failed", { description: "The system could not initialize the wallet link." });
@@ -986,6 +1114,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setPracticeBalance("0.00");
         setIsSwitchingWallet(false);
         setWalletConnectRequested(false);
+        clearSessionScope();
         removeToken();
         localStorage.removeItem("trk_wallet_address");
 

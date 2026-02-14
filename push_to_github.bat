@@ -1,8 +1,8 @@
 @echo off
-echo Pushing changes to GitHub...
+echo Pushing Admin Login Debug Updates to GitHub...
 cd "c:\TRK Project"
 git add .
-git commit -m "Deployment complete: Lucky Draw contract and production env setup"
+git commit -m "Fix: Add UI feedback for loading state on Admin Login button"
 git push origin main
 echo Done!
 pause
