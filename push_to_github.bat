@@ -1,8 +1,5 @@
 @echo off
-echo Pushing Admin Login Debug Updates to GitHub...
-cd "c:\TRK Project"
-git add .
-git commit -m "Fix: Add UI feedback for loading state on Admin Login button"
-git push origin main
-echo Done!
+"C:\Program Files\Git\cmd\git.exe" add .
+"C:\Program Files\Git\cmd\git.exe" commit -m "Final Update: Fix login flows and backend config"
+"C:\Program Files\Git\cmd\git.exe" push origin main
 pause
