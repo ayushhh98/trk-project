@@ -41,8 +41,9 @@ export function CyberCrash({ }: CyberCrashProps) {
     const startRound = () => {
         if (isProcessing) return;
 
+        const currencyLabel = isRealMode ? "USDT" : "Points";
         if (amount < 1.0) {
-            toast.warning("Minimum entry is 1.0 SC");
+            toast.warning(`Minimum entry is 1.0 ${currencyLabel}`);
             return;
         }
 
@@ -51,8 +52,8 @@ export function CyberCrash({ }: CyberCrashProps) {
             : parseFloat(practiceBalance);
 
         if (currentBalance < amount) {
-            toast.error(`Insufficient ${isRealMode ? 'Sweepstakes Coins' : 'Gold Coins'}!`, {
-                description: isRealMode ? "Your Reward Vault is low. Purchase a Membership Package?" : "Standard Play points depleted.",
+            toast.error(`Insufficient ${isRealMode ? 'Game Balance' : 'Practice Credits'}!`, {
+                description: isRealMode ? "Your balance is too low for this entry." : "Standard Play points depleted.",
                 action: isRealMode ? {
                     label: "Deposit",
                     onClick: () => router.push("/dashboard/cash?deposit=true")
@@ -76,11 +77,9 @@ export function CyberCrash({ }: CyberCrashProps) {
         setCashOutValue(null);
 
         // Simulated Crash Point (1.0 to 10.0)
-        // In real mode, this would be determined by the smart contract or backend VRF
         const crashPoint = 1 + Math.random() * (Math.random() > 0.8 ? 8 : 3);
 
         intervalRef.current = setInterval(() => {
-            // Smoother, more dynamic climb
             const increment = 0.01 * Math.pow(multiplierRef.current, 0.5);
             multiplierRef.current += increment;
             setMultiplier(Number(multiplierRef.current.toFixed(2)));
@@ -92,7 +91,7 @@ export function CyberCrash({ }: CyberCrashProps) {
             if (multiplierRef.current >= crashPoint) {
                 crash();
             }
-        }, 60); // Faster updates for smoother feel
+        }, 60);
     };
 
     const crash = () => {
@@ -117,7 +116,7 @@ export function CyberCrash({ }: CyberCrashProps) {
         }
     };
 
-    const currencyLabel = isRealMode ? "SC" : "GC";
+    const currencyLabel = isRealMode ? "USDT" : "Points";
 
     return (
         <div className="space-y-12">
@@ -131,13 +130,13 @@ export function CyberCrash({ }: CyberCrashProps) {
                     )}
                 >
                     {isRealMode ? <ShieldCheck className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
-                    {isRealMode ? "Promotional Play (Win SC)" : "Standard Play (Fun Only)"}
+                    {isRealMode ? "Direct Protocol (USDT)" : "Practice Mode Active"}
                 </motion.div>
                 <h1 className="text-5xl md:text-7xl font-display font-black italic uppercase tracking-tight text-white">
                     Cyber <span className="text-emerald-500 drop-shadow-[0_0_30px_rgba(16,185,129,0.3)]">Crash</span>
                 </h1>
                 <p className="text-white/40 text-sm md:text-base leading-relaxed uppercase tracking-widest font-medium">
-                    Watch the multiplier climb. Cash out {isRealMode ? "Sweepstakes Coins" : "Gold Coins"} before the <span className="text-red-500 font-bold">System Overload</span>.
+                    Watch the multiplier climb. Cash out {isRealMode ? "Game USDT" : "Practice Credits"} before the <span className="text-red-500 font-bold">System Overload</span>.
                 </p>
             </div>
 
@@ -179,7 +178,6 @@ export function CyberCrash({ }: CyberCrashProps) {
                 </div>
 
                 <div className="space-y-10">
-                    {/* The Multiplier Visualizer */}
                     <div className="relative aspect-[21/9] rounded-[3rem] bg-black/40 border-2 border-white/5 overflow-hidden flex flex-col items-center justify-center group">
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(16,185,129,0.1),transparent_70%)] opacity-50" />
                         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[length:40px_40px] opacity-20" />
@@ -211,7 +209,6 @@ export function CyberCrash({ }: CyberCrashProps) {
                         </div>
                     </div>
 
-                    {/* Action Controls */}
                     <div className="max-w-md mx-auto space-y-6">
                         {status === 'running' ? (
                             <Button

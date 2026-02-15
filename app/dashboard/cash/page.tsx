@@ -4,8 +4,9 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { WalletCard } from "@/components/cash/WalletCard";
-import { RewardRedemptionModal } from "@/components/cash/RewardRedemptionModal";
-import { MembershipModal } from "@/components/cash/MembershipModal";
+import { DepositModal } from "@/components/cash/DepositModal";
+import { WithdrawalModal } from "@/components/cash/WithdrawalModal";
+
 import { DepositHistoryTable } from "@/components/cash/DepositHistoryTable";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -19,17 +20,15 @@ function CashDashboardContent() {
     const {
         realBalances, usdtBalance, nativeBalance,
         unclaimedRounds, claimWin, claimLoss, refetchUnclaimed, faucet,
-        isConnected, isLoading, user, deposits, gameHistory, isRegisteredOnChain, purchaseMembership,
+        isConnected, isLoading, user, deposits, gameHistory, isRegisteredOnChain,
         address, connect, recentWallets, switchWallet, isSwitchingWallet, deposit
     } = useWallet();
     const router = useRouter();
-    const [isRewardRedeemOpen, setIsRewardRedeemOpen] = useState(false);
+    const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [hideBalances, setHideBalances] = useState(false);
     const [latency, setLatency] = useState(12);
     const searchParams = useSearchParams();
-    const rewardPoints = user?.rewardPoints || 0;
-    const rewardUSDT = (rewardPoints / 100).toFixed(2);
     const activeWallet = address;
     const walletList = (() => {
         const list = [...(recentWallets || [])];
@@ -74,10 +73,6 @@ function CashDashboardContent() {
 
     const handleDeposit = () => {
         setIsDepositOpen(true);
-    };
-
-    const handleMembership = () => {
-        router.push("/membership");
     };
 
     const executeDeposit = async (amount: number) => {
@@ -240,14 +235,24 @@ function CashDashboardContent() {
                                 </div>
 
                                 <div className="text-6xl font-mono font-black text-white tracking-tighter shadow-emerald-500/20 drop-shadow-lg">
-                                    {hideBalances ? "****" : (realBalances.totalUnified || 0).toFixed(2)} <span className="text-2xl text-emerald-400">SC</span>
+                                    {hideBalances ? "****" : (realBalances.grandTotal || 0).toFixed(2)} <span className="text-2xl text-emerald-400">USDT</span>
                                 </div>
-                                <div className="text-sm font-medium text-white/40 max-w-md leading-relaxed">
-                                    Your consolidated balance across all game protocols, cashback reserves, and referral income streams.
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-2 pt-4 border-t border-white/5">
+                                    <div className="flex flex-col">
+                                        <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Total_Deposited</span>
+                                        <span className="text-sm font-mono font-bold text-white/60">{(user?.activation?.totalDeposited || 0).toFixed(2)} USDT</span>
+                                    </div>
+                                    <div className="flex flex-col border-white/10 sm:border-l sm:pl-6">
+                                        <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Game_Balance</span>
+                                        <span className="text-sm font-mono font-bold text-white/60">{(realBalances.game || 0).toFixed(2)} USDT</span>
+                                    </div>
+                                    <div className="flex flex-col border-white/10 sm:border-l sm:pl-6">
+                                        <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Cash_Balance_Vault</span>
+                                        <span className="text-sm font-mono font-bold text-emerald-500/60">{(realBalances.cash || 0).toFixed(2)} USDT</span>
+                                    </div>
                                 </div>
-                                <div className="text-[10px] font-black uppercase tracking-widest text-white/30">
-                                    Reward Points: <span className="text-white/70">{rewardPoints.toLocaleString()} SC</span> (~${rewardUSDT})
-                                </div>
+
                             </div>
 
                             <div className="flex flex-col gap-3 w-full md:w-auto min-w-[200px]">
@@ -258,16 +263,10 @@ function CashDashboardContent() {
                                     DEPOSIT_USDT
                                 </Button>
                                 <Button
-                                    onClick={handleMembership}
+                                    onClick={() => setIsWithdrawOpen(true)}
                                     className="w-full h-12 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black text-xs uppercase tracking-widest rounded-xl transition-all"
                                 >
-                                    BUY_MEMBERSHIP
-                                </Button>
-                                <Button
-                                    onClick={() => setIsRewardRedeemOpen(true)}
-                                    className="w-full h-12 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black text-xs uppercase tracking-widest rounded-xl transition-all"
-                                >
-                                    REDEEM_REWARDS
+                                    WITHDRAW_FUNDS
                                 </Button>
                             </div>
                         </CardContent>
@@ -503,10 +502,26 @@ function CashDashboardContent() {
                             {
                                 name: "Web3_Connect",
                                 protocol: "Multi-Chain",
-                                desc: "Bridge assets from Ethereum, Polygon or Solana into the TRK Ecosystem.",
+                                desc: "High-velocity asset bridging from Ethereum, Polygon or Solana into TRK.",
                                 icon: Zap,
                                 color: "text-blue-400",
                                 link: "https://pancakeswap.finance"
+                            },
+                            {
+                                name: "Binance_Direct",
+                                protocol: "USDT-BEP20",
+                                desc: "Direct injection from Binance Exchange via secure network protocol.",
+                                icon: Landmark,
+                                color: "text-amber-400",
+                                link: "https://www.binance.com/en/my/wallet/account/main/withdrawal/crypto/USDT"
+                            },
+                            {
+                                name: "Global_Bridge",
+                                protocol: "Cross-Layer",
+                                desc: "Institutional grade liquidity sync for high-volume cross-chain transfers.",
+                                icon: Globe,
+                                color: "text-emerald-400",
+                                link: "https://stargate.finance/transfer"
                             }
                         ].map((bridge) => (
                             <Card key={bridge.name} className="bg-white/[0.02] border-white/5 p-6 group hover:bg-white/[0.04] transition-all relative overflow-hidden rounded-none">
@@ -545,16 +560,16 @@ function CashDashboardContent() {
 
             <AnimatePresence>
                 {isDepositOpen && (
-                    <MembershipModal
+                    <DepositModal
                         isOpen={isDepositOpen}
                         onClose={() => setIsDepositOpen(false)}
                         onConfirm={executeDeposit}
                     />
                 )}
-                {isRewardRedeemOpen && (
-                    <RewardRedemptionModal
-                        isOpen={isRewardRedeemOpen}
-                        onClose={() => setIsRewardRedeemOpen(false)}
+                {isWithdrawOpen && (
+                    <WithdrawalModal
+                        isOpen={isWithdrawOpen}
+                        onClose={() => setIsWithdrawOpen(false)}
                     />
                 )}
             </AnimatePresence>

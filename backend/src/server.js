@@ -40,9 +40,6 @@ const clubRoutes = require('./routes/club');
 const luckyDrawRoutes = require('./routes/luckyDraw');
 const adminRoutes = require('./routes/admin');
 const auditRoutes = require('./routes/audit');
-const freeCreditsRoutes = require('./routes/freeCredits');
-const packagesRoutes = require('./routes/packages');
-const rewardsRoutes = require('./routes/rewards');
 const contentRoutes = require('./routes/content');
 
 const app = express();
@@ -75,6 +72,7 @@ const io = socketIo(server, {
 });
 
 // Attach io to app for use in routes/services
+app.set('io', io);
 
 // CORS configuration
 const allowedOrigins = [
@@ -186,24 +184,6 @@ adminRoutes.initializeService(io);
 app.use('/api/admin', adminRoutes); // Admin routes (protected by RBAC)
 app.use('/api/audit', auditRoutes); // Audit log routes (admin only)
 
-// Sweepstakes Model Routes (Legal Compliance)
-// const freeCreditsRoutes = require('./routes/freeCreditsRoutes'); // Already declared above
-// const rewardsRoutes = require('./routes/rewardsRoutes');
-const gameNumberGuessRoutes = require('./routes/gameNumberGuess');
-const gameSpinWheelRoutes = require('./routes/gameSpinWheel');
-
-app.use('/api/game/number-guess', gameNumberGuessRoutes);
-app.use('/api/game/spin-wheel', gameSpinWheelRoutes); // Already declared above
-
-// Geo-Blocking Middleware
-const geoBlock = require('./middleware/geoBlock');
-app.use(geoBlock);
-
-
-app.use('/api/free-credits', freeCreditsRoutes); // MANDATORY: No purchase necessary
-app.use('/api/packages', packagesRoutes); // Membership packages (formerly deposits)
-app.use('/api/rewards', rewardsRoutes); // Sweepstakes rewards (promotional redemption)
-
 // Health check
 app.get('/api/health', (req, res) => {
     res.status(200).json({
@@ -261,7 +241,8 @@ io.use(async (socket, next) => {
         socket.user = {
             id: user._id,
             walletAddress: user.walletAddress,
-            role: user.role
+            role: user.role,
+            referredBy: user.referredBy // Add referredBy for status notifications
         };
 
         // Join user-specific rooms (support legacy emit targets)
@@ -270,6 +251,20 @@ io.use(async (socket, next) => {
         socket.join(userIdRoom);
         if (user.walletAddress) {
             socket.join(user.walletAddress.toLowerCase());
+        }
+
+        // Track Online Status
+        if (!global.onlineUsers) global.onlineUsers = new Map();
+        const userIds = global.onlineUsers.get(userIdRoom) || new Set();
+        userIds.add(socket.id);
+        global.onlineUsers.set(userIdRoom, userIds);
+
+        // If this is the user's first socket, notify referrer
+        if (userIds.size === 1 && user.referredBy) {
+            io.to(user.referredBy.toString()).emit('referral_status_change', {
+                userId: userIdRoom,
+                status: 'online'
+            });
         }
 
         next();
@@ -282,6 +277,33 @@ io.use(async (socket, next) => {
         }
         next();
     }
+});
+
+// Add disconnect handler to clean up online tracking
+io.on('connection', (socket) => {
+    logger.debug(`Authenticated: ${socket.user ? socket.user.walletAddress : 'Guest'} (${socket.id})`);
+
+    socket.on('disconnect', () => {
+        logger.debug('Client disconnected:', socket.id);
+
+        if (socket.user && global.onlineUsers) {
+            const userIdRoom = socket.user.id.toString();
+            const userIds = global.onlineUsers.get(userIdRoom);
+            if (userIds) {
+                userIds.delete(socket.id);
+                if (userIds.size === 0) {
+                    global.onlineUsers.delete(userIdRoom);
+                    // Notify referrer that user went offline
+                    if (socket.user.referredBy) {
+                        io.to(socket.user.referredBy.toString()).emit('referral_status_change', {
+                            userId: userIdRoom,
+                            status: 'offline'
+                        });
+                    }
+                }
+            }
+        }
+    });
 });
 
 // Graceful shutdown handler
@@ -304,14 +326,6 @@ process.on('SIGINT', () => {
             logger.info('MongoDB connection closed');
             process.exit(0);
         });
-    });
-});
-
-io.on('connection', (socket) => {
-    logger.debug(`Authenticated: ${socket.user ? socket.user.walletAddress : 'Guest'} (${socket.id})`);
-
-    socket.on('disconnect', () => {
-        logger.debug('Client disconnected:', socket.id);
     });
 });
 

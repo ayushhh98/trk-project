@@ -14,7 +14,7 @@ interface GameInterfaceProps {
     currencyLabel?: string;
 }
 
-export function GameInterface({ onPlaceEntry, isProcessing, lastResult, currencyLabel = "SC" }: GameInterfaceProps) {
+export function GameInterface({ onPlaceEntry, isProcessing, lastResult, currencyLabel = "USDT" }: GameInterfaceProps) {
     const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
     const [copied, setCopied] = useState(false);
 

@@ -30,11 +30,10 @@ import { Logo } from "@/components/ui/Logo";
 const menuItems = [
     { name: "Terminal", icon: LayoutDashboard, href: "/dashboard", badge: "Live" },
     { name: "Liquidity Vault", icon: Wallet, href: "/dashboard/cash" },
-    { name: "Membership", icon: Crown, href: "/membership", badge: "GC/SC" },
     { name: "Income Portfolio", icon: BarChart3, href: "/dashboard/income" },
     { name: "Yield Engine", icon: TrendingUp, href: "/dashboard/roi-on-roi" },
     { name: "Activation Node", icon: Cpu, href: "/dashboard/activation" },
-    { name: "Jackpot Draw", icon: Gift, href: "/dashboard/lucky-draw", badge: "10 SC" },
+    { name: "Jackpot Draw", icon: Gift, href: "/dashboard/lucky-draw", badge: "Live" },
     { name: "Elite Club", icon: Trophy, href: "/dashboard/club" },
     { name: "Growth Hub", icon: Users, href: "/dashboard/referral" },
     { name: "Protection", icon: ShieldCheck, href: "/dashboard/cashback", activeIndicator: true },
@@ -166,7 +165,7 @@ export function Sidebar() {
                         >
                             <div className="flex items-center gap-3">
                                 <LogOut className="h-5 w-5 group-hover:rotate-12 transition-transform" />
-                                <span className="text-xs font-black uppercase tracking-[0.2em]">Terminate_Session</span>
+                                <span className="text-xs font-black uppercase tracking-[0.2em]">Log Out</span>
                             </div>
                             <X className="h-3 w-3 opacity-30" />
                         </Button>

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { authAPI, userAPI, gameAPI, depositAPI, packagesAPI, getToken, removeToken, getStoredUser, setStoredUser, setToken as setApiToken } from "@/lib/api";
+import { authAPI, userAPI, gameAPI, depositAPI, packagesAPI, referralAPI, getToken, removeToken, getStoredUser, setStoredUser, setToken as setApiToken } from "@/lib/api";
 import { useAccount, useConnect, useDisconnect, useSignMessage, useBalance, useSwitchChain, useWriteContract, useWalletClient, useReadContract, usePublicClient } from "wagmi";
 import { openWeb3Modal } from "@/components/providers/Web3Provider";
 import { toast } from "sonner";
@@ -41,8 +41,11 @@ interface RealBalances {
     winners: number;
     roiOnRoi: number;
     club: number;
+    teamWinners: number;
     walletBalance: number;
-    totalUnified: number; // Aggregated balance for UI
+    luckyDrawWallet: number;
+    totalUnified: number; // Aggregated internal assets
+    grandTotal: number;    // External USDT + Internal Unified
 }
 
 const DEFAULT_REAL_BALANCES: RealBalances = {
@@ -54,8 +57,11 @@ const DEFAULT_REAL_BALANCES: RealBalances = {
     winners: 0,
     roiOnRoi: 0,
     club: 0,
+    teamWinners: 0,
     walletBalance: 0,
-    totalUnified: 0
+    luckyDrawWallet: 0,
+    totalUnified: 0,
+    grandTotal: 0
 };
 
 interface Activation {
@@ -75,6 +81,7 @@ interface User {
     practiceBalance: number;
     realBalances: RealBalances;
     referralCode: string;
+    referredBy?: string;
     clubRank: string;
     activation?: Activation;
     deposits?: DepositItem[];
@@ -97,12 +104,9 @@ interface User {
     totalWinnings?: number;
     credits?: number;
     rewardPoints?: number;
-    membershipLevel?: 'none' | 'starter' | 'premium' | 'vip';
-    gameStats?: {
-        dailySpins: number;
-        lastSpin: string;
-        dailyCapReset: string;
-    };
+    dailySpins: number;
+    lastSpin: string;
+    dailyCapReset: string;
     nonce?: string;
 }
 
@@ -130,7 +134,6 @@ interface WalletContextType {
     nativeBalance: string;
     usdtBalance: string;
     isLoading: boolean;
-    purchaseMembership: (amount: number, packageType?: 'starter' | 'premium' | 'vip') => Promise<string>;
     claimWin: (roundId: number, isCash: boolean) => Promise<string>;
     claimLoss: (roundId: number, isCash: boolean) => Promise<string>;
     claimLiquiditySync: () => Promise<void>;
@@ -156,6 +159,12 @@ interface WalletContextType {
     hasMoreHistory: boolean;
     isHistoryLoading: boolean;
     totalProfit: number;
+
+    // Referral Onboarding
+    showReferralPrompt: boolean;
+    setShowReferralPrompt: (show: boolean) => void;
+    applyReferral: (code: string) => Promise<boolean>;
+    topupLuckyWallet: (fromWallet: string, amount: number) => Promise<any>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -241,6 +250,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const [recentWallets, setRecentWallets] = useState<string[]>([]);
     const [isSwitchingWallet, setIsSwitchingWallet] = useState(false);
     const [unclaimedRounds, setUnclaimedRounds] = useState<bigint[]>([]);
+    const [showReferralPrompt, setShowReferralPrompt] = useState(false);
+    const [pendingReferralCode, setPendingReferralCode] = useState("");
 
     // History Pagination State
     const [historyPage, setHistoryPage] = useState(1);
@@ -301,9 +312,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const hasRealAccess = React.useMemo(() => {
         const totalDeposited = user?.activation?.totalDeposited || 0;
-        const realTotal = (realBalances.game || 0) + (realBalances.walletBalance || 0) + (realBalances.cash || 0);
-        return totalDeposited > 0 || realTotal > 0;
-    }, [user?.activation?.totalDeposited, realBalances.game, realBalances.walletBalance, realBalances.cash]);
+        return totalDeposited > 0 || (realBalances.totalUnified || 0) > 0;
+    }, [user?.activation?.totalDeposited, realBalances.totalUnified]);
 
     // Load mode preference from storage (default to practice until real access is unlocked)
     useEffect(() => {
@@ -461,27 +471,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             const backendGame = user?.realBalances?.game || 0;
             const finalGame = Math.max(onChainGame, backendGame);
 
+            const wBal = Number(formatUnits(walletBal || 0n, 18));
+            const gBal = finalGame;
+            const cbBal = Number(formatUnits(cashback || 0n, 18));
+            const externalUsdt = Number(formatUnits(usdtBalanceRaw || 0n, 18));
+
+            const totalUnified = (wBal + gBal + cbBal + (user?.realBalances?.lucky || 0) + (user?.realBalances?.directLevel || 0) + (user?.realBalances?.winners || 0) + (user?.realBalances?.roiOnRoi || 0) + (user?.realBalances?.club || 0));
+            const grandTotal = totalUnified + externalUsdt;
+
             if (onChainGame > backendGame) {
                 maybeSyncOnchainBalance(onChainGame, backendGame);
             }
 
             setRealBalances(prev => {
-                const wBal = Number(formatUnits(walletBal || 0n, 18));
-                const gBal = finalGame;
                 return {
                     ...prev,
                     cash: wBal,
                     game: gBal,
-                    cashback: Number(formatUnits(cashback || 0n, 18)),
+                    cashback: cbBal,
                     practice: Number(formatUnits(practiceBal || 0n, 18)),
-                    walletBalance: wBal,
-                    totalUnified: gBal + wBal
+                    totalUnified: totalUnified,
+                    grandTotal: grandTotal
                 };
             });
             const formattedPractice = formatUnits(practiceBal || 0n, 18);
             setPracticeBalance(Number(formattedPractice).toFixed(2));
         }
-    }, [userBalancesData, usdtBalanceRaw, user?.realBalances?.game]);
+    }, [userBalancesData, usdtBalanceRaw, user?.realBalances?.game, user?.realBalances?.lucky, user?.realBalances?.directLevel, user?.realBalances?.winners, user?.realBalances?.roiOnRoi, user?.realBalances?.club]);
 
 
     // SYNC: When network changes, refresh all data immediately
@@ -513,9 +529,28 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     if (response.data?.user) {
                         setUser(response.data.user);
                         setPracticeBalance(response.data.user.practiceBalance?.toString() || "0.00");
-                        setRealBalances(response.data.user.realBalances || {
-                            cash: 0, game: 0, cashback: 0, lucky: 0, directLevel: 0, winners: 0, roiOnRoi: 0, club: 0, walletBalance: 0, totalUnified: 0
-                        });
+                        if (response.data.user.realBalances) {
+                            const totalUnified = (response.data.user.realBalances.cash || 0) +
+                                (response.data.user.realBalances.game || 0) +
+                                (response.data.user.realBalances.cashback || 0) +
+                                (response.data.user.realBalances.lucky || 0) +
+                                (response.data.user.realBalances.directLevel || 0) +
+                                (response.data.user.realBalances.winners || 0) +
+                                (response.data.user.realBalances.roiOnRoi || 0) +
+                                (response.data.user.realBalances.club || 0) +
+                                (response.data.user.realBalances.teamWinners || 0);
+
+                            const externalUsdt = Number(formatUnits(usdtBalanceRaw || 0n, 18));
+                            const grandTotal = totalUnified + externalUsdt;
+
+                            setRealBalances({
+                                ...response.data.user.realBalances,
+                                totalUnified: totalUnified,
+                                grandTotal: grandTotal
+                            });
+                        } else {
+                            setRealBalances(DEFAULT_REAL_BALANCES);
+                        }
                         setToken(storedToken);
 
                         // Fetch initial history
@@ -561,9 +596,30 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 setUser(freshUser);
                 setPracticeBalance(freshUser.practiceBalance?.toString() || "0.00");
                 if (freshUser.realBalances) {
+                    const totalUnified = (freshUser.realBalances.cash || 0) +
+                        (freshUser.realBalances.game || 0) +
+                        (freshUser.realBalances.cashback || 0) +
+                        (freshUser.realBalances.lucky || 0) +
+                        (freshUser.realBalances.directLevel || 0) +
+                        (freshUser.realBalances.winners || 0) +
+                        (freshUser.realBalances.roiOnRoi || 0) +
+                        (freshUser.realBalances.club || 0) +
+                        (freshUser.realBalances.teamWinners || 0);
+
                     setRealBalances({
-                        ...freshUser.realBalances,
-                        totalUnified: (freshUser.realBalances.cash || 0) + (freshUser.realBalances.game || 0)
+                        cash: freshUser.realBalances.cash || 0,
+                        game: freshUser.realBalances.game || 0,
+                        cashback: freshUser.realBalances.cashback || 0,
+                        lucky: freshUser.realBalances.lucky || 0,
+                        directLevel: freshUser.realBalances.directLevel || 0,
+                        winners: freshUser.realBalances.winners || 0,
+                        roiOnRoi: freshUser.realBalances.roiOnRoi || 0,
+                        club: freshUser.realBalances.club || 0,
+                        teamWinners: freshUser.realBalances.teamWinners || 0,
+                        walletBalance: freshUser.realBalances.walletBalance || 0,
+                        luckyDrawWallet: freshUser.realBalances.luckyDrawWallet || 0,
+                        totalUnified: totalUnified,
+                        grandTotal: totalUnified + Number(formatUnits(usdtBalanceRaw || 0n, 18))
                     });
                 }
                 refreshUser();
@@ -599,6 +655,89 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const interval = setInterval(syncBalances, 8000); // 8 second sync
         return () => clearInterval(interval);
     }, [wagmiAddress, isWagmiConnected]);
+
+    // REAL-TIME REFERRAL LISTENERS
+    useEffect(() => {
+        if (!socket || !user) return;
+
+        const handleStatusChange = (data: { userId: string, status: 'online' | 'offline' }) => {
+            // Optional: Show status change info
+            // console.log(`Referral ${data.userId} is ${data.status}`);
+        };
+
+        const handleActivity = (data: { type: string, amount: number, userName: string }) => {
+            if (data.type === 'deposit') {
+                toast.success(`${data.amount} USDT Deposit Incoming!`, {
+                    description: `${data.userName} just added funds. Your commission is live.`,
+                    icon: "💰"
+                });
+                refreshUser();
+            }
+        };
+
+        const handleBalanceUpdate = (data: any) => {
+            // console.log("Real-Time Balance Update Received:", data);
+            refreshUser();
+            // Optional: notify user based on type
+            if (data.type === 'commission') {
+                toast.success(`Commission Earned: $${data.amount.toFixed(2)}`, {
+                    description: `New yield successfully added to your ${data.commissionType} balance.`,
+                    icon: "⚡"
+                });
+            } else if (data.type === 'club_income') {
+                toast.success(`Club Income Received: $${data.amount.toFixed(2)}`, {
+                    description: `Daily pool share for ${data.rank || 'your rank'} has been credited.`,
+                    icon: "🏢"
+                });
+            } else if (data.type === 'lucky_win') {
+                toast.success(`🎉 YOU WON THE JACKPOT!`, {
+                    description: `You won $${data.amount.toFixed(2)} in the Lucky Draw!`,
+                    icon: "🎰",
+                    duration: 10000 // Show longer for big wins
+                });
+            } else if (data.type === 'rank_up') {
+                toast.success(`🚀 RANK UPGRADED!`, {
+                    description: data.message || `You have reached a new Club Rank: ${data.newRank}`,
+                    icon: "🏆",
+                    duration: 8000
+                });
+            }
+        };
+
+        const currentSocket = socket;
+        currentSocket.on('referral_status_change', handleStatusChange);
+        currentSocket.on('referral_activity', handleActivity);
+        currentSocket.on('balance_update', handleBalanceUpdate);
+
+        return () => {
+            if (currentSocket) {
+                currentSocket.off('referral_status_change', handleStatusChange);
+                currentSocket.off('referral_activity', handleActivity);
+                currentSocket.off('balance_update', handleBalanceUpdate);
+            }
+        };
+    }, [user]);
+
+    const applyReferral = async (referralCode: string) => {
+        if (!token) return false;
+        try {
+            const res = await referralAPI.applyCode(referralCode);
+            if (res.status === 'success') {
+                toast.success("Referral Activated!", {
+                    description: `You are now linked to ${res.data.referredBy}`
+                });
+                setShowReferralPrompt(false);
+                refreshUser();
+                return true;
+            } else {
+                toast.error(res.message || "Invalid referral code");
+                return false;
+            }
+        } catch (err: any) {
+            toast.error(err.message || "Failed to apply referral code");
+            return false;
+        }
+    };
 
     // Flag to prevent auth attempts during logout
     const isDisconnectingRef = React.useRef(false);
@@ -788,6 +927,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 });
                 setPracticeBalance(userData.practiceBalance?.toString() || "0.00");
 
+                // Trigger Referral Onboarding if missing (for player role only)
+                if (userData.role === 'player' && !userData.referredBy) {
+                    setShowReferralPrompt(true);
+                }
+
                 // Sync API & Persistence
                 setApiToken(newToken);
                 setStoredUser(userData);
@@ -809,12 +953,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 const isAdminLoginScope = currentScope === "admin";
                 const isAuthGate = path === "/" || path === "/auth" || path === "/admin/login";
 
-                if (isAdminLoginScope) {
-                    router.replace("/admin");
-                } else if (isAuthGate) {
-                    router.replace("/dashboard");
+                // Strict Role-Based Routing
+                if (isAdminRole) {
+                    // Only force admin panel if they logged in via admin gate
+                    if (isAdminLoginScope) {
+                        router.replace("/admin");
+                    } else {
+                        // Allow admins to access the dashboard/home like normal users
+                        if (isAuthGate) {
+                            router.replace("/#join");
+                        } else {
+                            refreshUser();
+                        }
+                    }
                 } else {
-                    refreshUser();
+                    // If regular user, force them to HOME (not dashboard) if they are at an auth gate OR came from admin
+                    if (isAuthGate || isAdminLoginScope) {
+                        router.replace("/#join");
+                    } else {
+                        // User is on a specific page (e.g. /games/dice), let them stay
+                        refreshUser();
+                    }
                 }
             } else {
                 throw new Error(verifyRes.message || "Identity Verification Failed.");
@@ -952,23 +1111,46 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 return;
             }
 
-            // 2. Identify Connector
-            // console.log("Available Connectors:", connectors.map(c => ({ id: c.id, name: c.name })));
+            // 2. Identify Connector - Simple Direct Matching
+            console.log("=== WALLET CONNECTION DEBUG ===");
+            console.log("Available Connectors:", connectors.map(c => ({
+                id: c.id,
+                name: c.name,
+                type: c.type,
+                uid: c.uid
+            })));
+            console.log("Requested Wallet Type:", walletType);
+
             let connector;
 
             if (walletType === 'Trust Wallet') {
-                // Prioritize the specific injected connector for Trust
-                connector = connectors.find(c => c.id === 'trust' || c.id === 'app.trustwallet');
-                // Fallback to name check if ID lookup fails
-                if (!connector) connector = connectors.find(c => c.name.toLowerCase().includes('trust'));
+                // Try multiple matching strategies in order of preference
+                connector = connectors.find(c => c.id === 'com.trustwallet.app') ||  // EIP-6963
+                    connectors.find(c => c.name === 'Trust Wallet') ||         // Name match
+                    connectors.find(c => c.id === 'trust') ||                   // ID match
+                    connectors.find(c => c.name.toLowerCase().includes('trust')); // Fuzzy match
+
+                console.log("Trust Wallet Selected Connector:", connector ? {
+                    id: connector.id,
+                    name: connector.name,
+                    type: connector.type
+                } : "NONE FOUND");
+
             } else if (walletType === 'MetaMask') {
-                connector = connectors.find(c =>
-                    c.id === 'metaMask'
-                    || c.id === 'io.metamask'
-                    || c.id === 'injected'
-                    || c.name.toLowerCase().includes('metamask')
-                );
+                // Try multiple matching strategies in order of preference
+                connector = connectors.find(c => c.id === 'io.metamask') ||           // EIP-6963
+                    connectors.find(c => c.name === 'MetaMask') ||             // Name match
+                    connectors.find(c => c.id === 'metaMask') ||                // ID match (camelCase)
+                    connectors.find(c => c.name.toLowerCase().includes('metamask')); // Fuzzy match
+
+                console.log("MetaMask Selected Connector:", connector ? {
+                    id: connector.id,
+                    name: connector.name,
+                    type: connector.type
+                } : "NONE FOUND");
             }
+
+            console.log("=== END DEBUG ===");
 
             // 3. Connector Found? Connect.
             if (connector) {
@@ -976,22 +1158,48 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 const toastId = toast.loading(`Connecting to ${walletType}...`);
                 try {
                     await connectAsync({ connector });
-                    // login() will be triggered by useEffect when isWagmiConnected changes
+                    toast.dismiss(toastId);
                 } catch (err: any) {
                     toast.dismiss(toastId);
+                    const isMissingProvider = err.name === 'ProviderNotFoundError' ||
+                        err.message?.includes("Provider not found") ||
+                        err.message?.includes("Connector not found");
+
                     if (err.code === 4001 || err.message?.includes("User rejected")) {
                         toast.info("Connection Cancelled");
+                    } else if (isMissingProvider) {
+                        toast.error(`${walletType} extension not detected.`, {
+                            description: `Please install the ${walletType} extension or try "Other Wallets".`
+                        });
+                        // Don't auto-open modal if they specifically clicked a wallet that is missing
                     } else {
-                        console.error("Connector link failed. Falling back to universal modal.", err);
-                        await openWeb3Modal();
+                        toast.error(`Failed to connect to ${walletType}`, {
+                            description: err.message || 'Unknown error'
+                        });
                     }
+                    return;
+                }
+            } else {
+                // Connector not found - fallback to Web3Modal which can handle wallet selection better
+                console.warn(`No connector found for ${walletType}. Available connectors:`,
+                    connectors.map(c => ({ id: c.id, name: c.name }))
+                );
+
+                toast.info(`${walletType} connector not found`, {
+                    description: 'Opening wallet selection modal...'
+                });
+
+                // Fallback to Web3Modal
+                await openWeb3Modal();
+
+                // If a wallet is already connected after modal, trigger auth
+                if (wagmiConnectedRef.current && wagmiAddressRef.current) {
+                    await login();
                 }
                 return;
             }
 
-            // 4. Fallback if connector not found (e.g. Trust selected but not installed)
-            console.warn(`Connector for ${walletType} not found. Using Web3Modal.`);
-            await openWeb3Modal();
+            // After connection attempt, authenticate
 
             // Should be handled by useEffect, but good to have fallback checks
             if (wagmiConnectedRef.current && wagmiAddressRef.current) {
@@ -1159,13 +1367,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                         const currentPractice = response.data.user.practiceBalance || 0;
                         const totalDeposited = response.data.user.activation?.totalDeposited || 0;
 
-                        const unified = Number(gBalance) + Number(wBalance);
+                        const rb = response.data.user.realBalances;
+                        const unified = (rb.cash || 0) + (rb.game || 0) + (rb.cashback || 0) +
+                            (rb.lucky || 0) + (rb.directLevel || 0) + (rb.winners || 0) +
+                            (rb.roiOnRoi || 0) + (rb.club || 0) + (rb.teamWinners || 0);
+                        const externalUsdt = Number(formatUnits(usdtBalanceRaw || 0n, 18));
+                        const grandTotal = unified + externalUsdt;
+
                         setRealBalances({
-                            ...response.data.user.realBalances,
+                            ...rb,
                             practice: currentPractice,
-                            cash: wBalance,
-                            game: gBalance,
-                            totalUnified: unified
+                            totalUnified: unified,
+                            grandTotal: grandTotal
                         });
                         setTotalProfit(unified - totalDeposited);
                     }
@@ -1346,7 +1559,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             throw new Error("Insufficient balance");
         }
         if (amount < 1.0) {
-            toast.error("Minimum entry is 1.0 SC");
+            toast.error("Minimum entry is 1.0 USDT");
             return { won: false, payout: 0, hash: "INVALID_BET", luckyNumber: null };
         }
 
@@ -1450,8 +1663,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
             const amountBig = parseUnits(amount.toString(), 18);
 
-            // Unified internal balance check: cash + wallet
-            const totalAvailable = realBalances.cash + realBalances.walletBalance;
+            // Unified internal balance check: cash + game (or other relevant tiers)
+            const totalAvailable = realBalances.cash + realBalances.game;
 
             // If internal balance is enough, we could potentially call a different contract function 
             // but the user wants to NOT open transaction popup. 
@@ -1696,13 +1909,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const topupLuckyWallet = async (fromWallet: string, amount: number) => {
+        if (!user) throw new Error("Authentication required");
+        const toastId = toast.loading(`Moving ${amount} USDT to Lucky Draw Wallet...`);
+
+        try {
+            const data = await depositAPI.luckyTopup(fromWallet, amount);
+            if (data.status === 'success') {
+                toast.success(data.message || "Top-up successful", { id: toastId });
+                refreshUser();
+                return data.data;
+            } else {
+                throw new Error(data.message || "Top-up failed");
+            }
+        } catch (error: any) {
+            console.error("Top-up failed:", error);
+            toast.error(error.message || "Top-up failed", { id: toastId });
+            throw error;
+        }
+    };
+
+
     const redeem = async (walletType: keyof RealBalances, amount: number) => {
-        if (amount < 10) {
-            toast.error("Minimum redemption amount is 10 SC");
+        if (amount < 5) {
+            toast.error("Minimum withdrawal is 5 USDT");
             return false;
         }
 
-        const toastId = toast.loading(`Initiating redemption from ${walletType}...`);
+        const fee = amount * 0.10; // 10% sustainability fee
+        const netAmount = amount - fee;
+
+        toast.loading(`Processing withdrawal (10% fee applied)...`, { id: "withdraw-toast" });
+
+        const toastId = toast.loading(`Initiating extraction from ${walletType}...`);
         try {
             // For the Extraction Vault (on-chain walletBalance), we perform a REAL blockchain transaction
             // 'game' is the primary on-chain balance where deposits go
@@ -1743,7 +1982,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 }).then(res => res.json());
 
                 if (response.status === 'success') {
-                    toast.success(`Successfully redeemed ${amount} SC!`, { id: toastId });
+                    toast.success(`Successfully extracted ${amount} USDT!`, { id: toastId });
                     refreshUser();
                     return true;
                 } else {
@@ -2009,90 +2248,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const purchaseMembership = async (price: number, packageType?: 'starter' | 'premium' | 'vip') => {
-        if (!packageType) {
-            // If called without packageType, it's likely a mistake or legacy call. 
-            // In strict mode, we require it. 
-            // However, to satisfy the interface we allow undefined in signature, but reject runtime.
-            throw new Error("Invalid purchase: Package type is required.");
-        }
-
-        if (!wagmiAddress || !publicClient) {
-            toast.error("Wallet not connected");
-            throw new Error("Wallet not connected");
-        }
-
-        const toastId = toast.loading("Initializing Package Purchase...");
-
-        try {
-            // 1. Validation
-            const usdtAddress = addresses.USDT as `0x${string}`;
-            const targetAddress = addresses.GAME as `0x${string}`;
-
-            if (!usdtAddress || !targetAddress || usdtAddress === '0x0000000000000000000000000000000000000000') {
-                throw new Error("System contracts not loaded. Please switch network or refresh.");
-            }
-
-            // Check Gas (Native Token Balance)
-            if (balanceData?.value === 0n) {
-                const errorMsg = "Insufficient BNB for Network Fees (Gas).";
-                toast.error(errorMsg, {
-                    duration: 10000,
-                    action: {
-                        label: "Get Free BNB",
-                        onClick: () => window.open("https://testnet.binance.org/faucet-smart", "_blank")
-                    }
-                });
-                throw new Error(errorMsg);
-            }
-
-            const amountBig = parseUnits(price.toString(), 18);
-
-            console.log(`[Membership] Initiating transfer: ${price} USDT to ${targetAddress}`);
-
-            toast.loading("Processing Payment... Please confirm in Wallet.", { id: toastId });
-
-            // 2. Transfer USDT (No approval needed for direct transfer)
-            // Explicitly typing arguments for safety
-            const transferTx = await writeContractAsync({
-                address: usdtAddress,
-                abi: ERC20ABI,
-                functionName: 'transfer',
-                args: [targetAddress, amountBig]
-            });
-
-            console.log(`[Membership] Tx Hash: ${transferTx}`);
-
-            toast.loading("Confirmation Received! Syncing...", { id: toastId });
-            await publicClient.waitForTransactionReceipt({ hash: transferTx });
-
-            // Small delay to allow backend RPC to sync
-            await new Promise(r => setTimeout(r, 2000));
-
-            // 3. Sync with Backend to Award Package
-            toast.loading("Activating Membership...", { id: toastId });
-            const res = await packagesAPI.purchase(packageType, transferTx);
-
-            if (res.status === 'success') {
-                toast.success("Membership Activated! Credits Added.", { id: toastId });
-                await refreshUser();
-                // Return hash for UI handling if needed
-                return transferTx;
-            } else {
-                throw new Error(res.message || "Activation failed");
-            }
-        } catch (err: any) {
-            console.error("Purchase failed:", err);
-            // Handle user rejection specifically
-            if (err.message?.includes("User rejected") || err.name === 'UserRejectedRequestError') {
-                toast.info("Transaction cancelled by user", { id: toastId });
-            } else {
-                toast.error(err.shortMessage || err.message || "Purchase failed", { id: toastId });
-            }
-            throw err;
-        }
-    };
-
     const effectiveToken = isHydrated ? (token || getToken()) : token;
 
     return (
@@ -2121,7 +2276,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 nativeBalance: balanceData?.value ? formatUnits(balanceData.value, balanceData.decimals) : "0",
                 usdtBalance: usdtBalanceRaw ? formatUnits(usdtBalanceRaw as bigint, 18) : "0",
                 isLoading,
-                purchaseMembership,
                 claimWin,
                 claimLoss,
                 claimLiquiditySync,
@@ -2145,7 +2299,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 loadMoreHistory,
                 hasMoreHistory,
                 isHistoryLoading,
-                totalProfit
+                totalProfit,
+                showReferralPrompt,
+                setShowReferralPrompt,
+                applyReferral,
+                topupLuckyWallet
             }), [
                 user,
                 practiceBalance,
@@ -2163,7 +2321,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 buyTicketsWithGameBalance,
                 isRealMode,
                 hasRealAccess,
-                user,
                 registerOnChain,
                 faucet,
                 usdtBalanceRaw,
@@ -2172,7 +2329,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 recentWallets,
                 isSwitchingWallet,
                 isWagmiConnected,
-                effectiveToken
+                showReferralPrompt,
+                applyReferral,
+                topupLuckyWallet
             ])}
         >
             {children}

@@ -90,13 +90,15 @@ class JackpotService {
 
         const totalCost = quantity * round.ticketPrice;
 
-        // Check balance (using Credits for sweepstakes)
-        if (user.credits < totalCost) {
-            throw new Error('Insufficient Credits');
+        // Check balance (using Game Balance or Lucky Wallet)
+        const purchaseFrom = user.realBalances.luckyDrawWallet >= totalCost ? 'luckyDrawWallet' : 'game';
+
+        if (user.realBalances[purchaseFrom] < totalCost) {
+            throw new Error(`Insufficient ${purchaseFrom === 'game' ? 'Game Balance' : 'Lucky Wallet'}`);
         }
 
-        // Deduct credits
-        user.credits -= totalCost;
+        // Deduct balance
+        user.realBalances[purchaseFrom] -= totalCost;
         await user.save();
 
         // Add tickets to round
@@ -246,9 +248,19 @@ class JackpotService {
             try {
                 const user = await User.findById(winner.userId);
                 if (user) {
-                    // Add prize to user's cash balance
-                    user.realBalances.cash = (user.realBalances.cash || 0) + winner.prize;
+                    // Add prize to user's LUCKY balance (to enforce Lucky Draw withdrawal limits)
+                    if (!user.realBalances) user.realBalances = {};
+                    user.realBalances.lucky = (user.realBalances.lucky || 0) + winner.prize;
                     await user.save();
+
+                    // Notify User of Win
+                    if (this.io) {
+                        this.io.to(user._id.toString()).emit('balance_update', {
+                            type: 'lucky_win',
+                            amount: winner.prize,
+                            newBalance: user.realBalances.lucky
+                        });
+                    }
 
                     // Update winner status
                     winner.status = 'completed';

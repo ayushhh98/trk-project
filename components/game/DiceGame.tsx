@@ -31,7 +31,7 @@ export function DiceGame({ }: DiceGameProps) {
     const [isProcessing, setIsProcessing] = useState(false);
     const [lastResult, setLastResult] = useState<{ won: boolean; number: number; pick: number; hash: string; amount: number } | null>(null);
 
-    const currencyLabel = isRealMode ? "SC" : "GC"; // SC = Sweepstakes Coins, GC = Gold Coins (Practice)
+    const currencyLabel = isRealMode ? "USDT" : "Points"; // Real USDT vs Practice Points
 
     const handlePlaceEntry = async (prediction: number) => {
         if (isProcessing) return;
@@ -45,11 +45,11 @@ export function DiceGame({ }: DiceGameProps) {
             return;
         }
         if (currentBalance < amount) {
-            toast.error(`Insufficient ${isRealMode ? 'Sweepstakes Coins' : 'Gold Coins'}!`, {
-                description: isRealMode ? "Get a Membership Package to earn more SC." : "Claim your Daily Free Credits.",
+            toast.error(`Insufficient ${isRealMode ? 'Relay Balance' : 'Practice Points'}!`, {
+                description: isRealMode ? "Please deposit USDT to your game wallet." : "Claim your Daily Free Credits.",
                 action: isRealMode ? {
-                    label: "Get Membership",
-                    onClick: () => router.push("/membership")
+                    label: "Deposit",
+                    onClick: () => router.push("/dashboard/cash?deposit=true")
                 } : {
                     label: "Claim Free",
                     onClick: () => router.push("/free-credits")
@@ -102,7 +102,7 @@ export function DiceGame({ }: DiceGameProps) {
                     )}
                 >
                     {isRealMode ? <ShieldCheck className="h-3 w-3" /> : <Dices className="h-3 w-3" />}
-                    {isRealMode ? "Promotional Play (Win SC)" : "Standard Play (Fun Only)"}
+                    {isRealMode ? "Real Protocol Active" : "Practice Mode Active"}
                 </motion.div>
 
                 <h1 className="text-4xl md:text-6xl font-display font-black uppercase italic tracking-tighter">
@@ -115,14 +115,11 @@ export function DiceGame({ }: DiceGameProps) {
                 </h1>
 
                 <p className="text-white/40 max-w-md mx-auto text-sm font-medium leading-relaxed">
-                    Select your winning side. {isRealMode ? "Use Sweepstakes Coins (SC) to participate in promotional games." : "Play for fun with Gold Coins (GC). No purchase necessary."}
+                    Select your winning side. {isRealMode ? "Using USDT from your game balance." : "Play for fun with Practice Credits."}
                 </p>
             </div>
 
             <div className="relative">
-
-
-
                 <div className="flex items-center justify-center gap-6 text-[10px] font-black uppercase tracking-widest text-white/20 mb-10">
                     <div className="flex items-center gap-2">
                         <div className="h-1 w-8 rounded-full bg-white/5" />

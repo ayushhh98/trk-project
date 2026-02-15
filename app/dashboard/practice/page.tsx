@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { DiceGame } from "@/components/game/DiceGame";
-import { NeonSpin } from "@/components/game/NeonSpin";
+// import { NeonSpin } from "@/components/game/NeonSpin";
 import { BetHistory } from "@/components/game/BetHistory";
 import { motion, AnimatePresence } from "framer-motion";
 import { TransactionFeed } from "@/components/game/TransactionFeed";
@@ -13,19 +13,19 @@ import { Switch } from "@/components/ui/Switch";
 import { ArrowLeft, Wallet, Coins, Dices, Trophy, Zap, AlertTriangle, ShieldCheck, Check, ArrowUpCircle, TrendingUp, Disc, ListFilter, Gem, LayoutGrid, BrainCircuit, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { MembershipModal } from '@/components/cash/MembershipModal';
-import { ProbabilityMatrix } from "@/components/game/ProbabilityMatrix";
-import NumberGuessGame from "@/components/game/NumberGuessGame";
+import { DepositModal } from '@/components/cash/DepositModal';
+
+// import NumberGuessGame from "@/components/game/NumberGuessGame";
 
 type GameType = 'dice' | 'crash' | 'spin' | 'matrix' | 'guess' | 'lobby';
 
 export default function PracticeGamePage() {
     const {
         realBalances, practiceBalance, faucet, isLoading, user,
-        placeEntry, realEntry, purchaseMembership, practiceExpiry,
+        placeEntry, realEntry, practiceExpiry,
         gameHistory, claimWin, unclaimedRounds, refetchUnclaimed,
         isRealMode, setIsRealMode, usdtBalance, hasRealAccess,
-        loadMoreHistory, hasMoreHistory, isHistoryLoading
+        loadMoreHistory, hasMoreHistory, isHistoryLoading, deposit
     } = useWallet();
     const [selectedGame, setSelectedGame] = useState<GameType>('lobby');
     const [isDepositOpen, setIsDepositOpen] = useState(false);
@@ -36,20 +36,17 @@ export default function PracticeGamePage() {
 
     const games = [
         { id: 'dice', name: 'Dice 6X', desc: 'Predict & Win 600%', icon: Dices, color: 'text-primary', bg: 'bg-primary/10' },
-        { id: 'spin', name: 'Neon Spin', desc: 'Quantum Luck Wheel', icon: Disc, color: 'text-purple-500', bg: 'bg-purple-500/10' },
-        { id: 'matrix', name: 'Probability Matrix', desc: 'Calibrate Risk Sequence', icon: BrainCircuit, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
-        { id: 'guess', name: 'Number Guess', desc: 'Safe 1-10 Prediction', icon: HelpCircle, color: 'text-cyan-400', bg: 'bg-cyan-400/10' },
+        // { id: 'spin', name: 'Neon Spin', desc: 'Quantum Luck Wheel', icon: Disc, color: 'text-purple-500', bg: 'bg-purple-500/10' },
+        // { id: 'guess', name: 'Number Guess', desc: 'Safe 1-10 Prediction', icon: HelpCircle, color: 'text-cyan-400', bg: 'bg-cyan-400/10' },
     ];
 
     return (
         <div className="min-h-screen bg-background pb-20 selection:bg-primary/30">
             <header className="border-b border-white/5 bg-black/40 backdrop-blur-3xl sticky top-0 z-50">
                 <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                        <Link href="/dashboard" className="group flex items-center gap-3 text-white/40 hover:text-white transition-all duration-300">
-                            <div className="h-10 w-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center group-hover:bg-primary group-hover:text-black group-hover:scale-110 transition-all">
-                                <ArrowLeft className="h-5 w-5" />
-                            </div>
+                    <div className="flex items-center gap-2">
+                        <Link href="/dashboard" className="h-12 w-12 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all group">
+                            <ArrowLeft className="h-5 w-5 group-hover:-translate-x-1 transition-transform" />
                         </Link>
                         {selectedGame !== 'lobby' && (
                             <Button
@@ -63,10 +60,15 @@ export default function PracticeGamePage() {
                     </div>
 
                     <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3 bg-white/5 p-1 rounded-full border border-white/10">
+                        <div className="flex items-center gap-1 bg-black/40 p-1 rounded-full border border-white/5">
                             <button
                                 onClick={() => setIsRealMode(false)}
-                                className={cn("text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full transition-all", !isRealMode ? "bg-primary text-black shadow-lg" : "text-white/30 hover:text-white")}
+                                className={cn(
+                                    "text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-full transition-all duration-300",
+                                    !isRealMode
+                                        ? "bg-primary text-black shadow-[0_0_20px_rgba(251,191,36,0.2)]"
+                                        : "text-white/20 hover:text-white"
+                                )}
                             >
                                 Practice
                             </button>
@@ -74,12 +76,15 @@ export default function PracticeGamePage() {
                                 onClick={() => hasRealAccess && setIsRealMode(true)}
                                 disabled={!hasRealAccess}
                                 className={cn(
-                                    "text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full transition-all",
-                                    isRealMode ? "bg-green-500 text-black shadow-lg" : "text-white/30 hover:text-white",
-                                    !hasRealAccess && "opacity-40 cursor-not-allowed hover:text-white/30"
+                                    "text-[9px] font-black uppercase tracking-tighter px-5 py-2 rounded-full transition-all duration-300 flex flex-col items-center justify-center leading-[0.8]",
+                                    isRealMode
+                                        ? "bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.2)]"
+                                        : "text-white/20 hover:text-white",
+                                    !hasRealAccess && "opacity-40 cursor-not-allowed"
                                 )}
                             >
-                                Real Money
+                                <span>Real</span>
+                                <span>Money</span>
                             </button>
                         </div>
 
@@ -100,7 +105,7 @@ export default function PracticeGamePage() {
                                         Practice
                                     </span>
                                     <span className={cn("text-xs font-mono font-bold leading-tight", !isRealMode ? "text-white" : "text-white/30")}>
-                                        {practiceBalance} <small className="text-[7px]">GC</small>
+                                        {practiceBalance} <small className="text-[7px]">Points</small>
                                     </span>
                                 </div>
                             </div>
@@ -118,13 +123,13 @@ export default function PracticeGamePage() {
                                         Vault
                                     </span>
                                     <span className={cn("text-xs font-mono font-bold leading-tight", isRealMode ? "text-white" : "text-white/30")}>
-                                        {(realBalances?.game || 0).toFixed(2)} <small className="text-[7px]">SC</small>
+                                        {(realBalances?.game || 0).toFixed(2)} <small className="text-[7px]">USDT</small>
                                     </span>
                                 </div>
                             </div>
 
                             {/* Quantum Asset Ticker (NEW) */}
-                            <div className="h-12 hidden xl:flex items-center gap-6 px-6  bg-white/[0.02] border border-white/5 overflow-hidden relative group">
+                            <div className="h-12 hidden xl:flex items-center gap-6 px-6 rounded-full bg-white/[0.02] border border-white/5 overflow-hidden relative group">
                                 <div className="absolute inset-0 bg-gradient-to-r from-background via-transparent to-background z-10 pointer-events-none" />
                                 <motion.div
                                     animate={{ x: [0, -1000] }}
@@ -163,10 +168,10 @@ export default function PracticeGamePage() {
                 </div>
             </header>
 
-            <MembershipModal
+            <DepositModal
                 isOpen={isDepositOpen}
                 onClose={() => setIsDepositOpen(false)}
-                onConfirm={async (val) => { await purchaseMembership(val); }}
+                onConfirm={async (val) => { await deposit(val); }}
             />
 
             <main className="container mx-auto px-6 py-10 md:py-16">
@@ -192,6 +197,29 @@ export default function PracticeGamePage() {
                             </div>
 
                             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                                <motion.div
+                                    whileHover={{ y: -10 }}
+                                    className="sm:col-span-2 lg:col-span-3"
+                                >
+                                    <Card className="bg-amber-500/10 border-amber-500/20 backdrop-blur-xl rounded-[2.5rem] overflow-hidden p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-2 border-dashed">
+                                        <div className="flex items-center gap-6">
+                                            <div className="h-16 w-16 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+                                                <AlertTriangle className="h-8 w-8 text-amber-500 animate-pulse" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-2xl font-display font-black italic uppercase text-white">30-Day Activation Protocol</h3>
+                                                <p className="text-xs text-white/50 uppercase font-bold tracking-widest leading-relaxed max-w-xl">
+                                                    Practice accounts are ephemeral. You must activate Tier 1 (10 USDT) or Tier 2 (100 USDT) within 30 days of registration to secure your network and assetsPermanently.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <Link href="/dashboard">
+                                            <Button className="bg-amber-500 text-black hover:bg-amber-400 font-black uppercase text-xs px-8 h-12 rounded-xl">
+                                                Activate Tier
+                                            </Button>
+                                        </Link>
+                                    </Card>
+                                </motion.div>
                                 {games.map((game) => (
                                     <motion.div
                                         key={game.id}
@@ -230,9 +258,9 @@ export default function PracticeGamePage() {
                             <div className="grid lg:grid-cols-12 gap-10">
                                 <div className="lg:col-span-12 space-y-12">
                                     {selectedGame === 'dice' && <DiceGame />}
-                                    {selectedGame === 'spin' && <NeonSpin />}
-                                    {selectedGame === 'matrix' && <ProbabilityMatrix />}
-                                    {selectedGame === 'guess' && <NumberGuessGame />}
+                                    {/* {selectedGame === 'spin' && <NeonSpin />} */}
+                                    {/* {selectedGame === 'matrix' && <ProbabilityMatrix />} */}
+                                    {/* {selectedGame === 'guess' && <NumberGuessGame />} */}
 
                                     {/* Universal Bet History */}
                                     <div className="pt-20 border-t border-white/5">
@@ -290,13 +318,15 @@ export default function PracticeGamePage() {
                                         <Card className="border-primary/20 bg-primary/[0.03] backdrop-blur-3xl rounded-[2.5rem] p-8">
                                             <h3 className="font-bold text-white uppercase tracking-wider mb-4">Ecosystem Benefits</h3>
                                             <ul className="space-y-2">
-                                                {["Convert Practice to Real", "Earn Referral Rewards", "100% Protection"].map((b, i) => (
+                                                {["100 USDT Signup Bonus", "Tier 1: 10 USDT Minimum", "Tier 2: 100 USDT Unlocks All", "10% Sustainability Fee"].map((b, i) => (
                                                     <li key={i} className="flex items-center gap-3 text-[10px] font-black uppercase text-white/50">
                                                         <Check className="h-3 w-3 text-green-500" /> {b}
                                                     </li>
                                                 ))}
                                             </ul>
-                                            <Button className="w-full mt-6 bg-white text-black font-black uppercase tracking-widest text-[10px] h-10 rounded-xl">Upgrade Access</Button>
+                                            <Link href="/dashboard">
+                                                <Button className="w-full mt-6 bg-white text-black font-black uppercase tracking-widest text-[10px] h-10 rounded-xl">Upgrade Access</Button>
+                                            </Link>
                                         </Card>
                                     </div>
 

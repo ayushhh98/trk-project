@@ -166,28 +166,9 @@ router.post('/process-daily', async (req, res) => {
             return res.status(403).json({ status: 'error', message: 'Unauthorized' });
         }
 
-        const usersWithCashback = await User.find({ 'cashbackStats.todayCashback': { $gt: 0 } });
-        let totalDistributed = 0;
-
-        for (const user of usersWithCashback) {
-            const poolAmount = user.cashbackStats.todayCashback * CASHBACK_POOL_ALLOCATION;
-            let currentUser = user;
-            let currentLevel = 1;
-
-            while (currentUser?.referredBy && currentLevel <= 15) {
-                const upline = await User.findById(currentUser.referredBy);
-                if (upline) {
-                    const commission = poolAmount * ROI_COMMISSION_RATES[currentLevel];
-                    upline.realBalances.roiOnRoi = (upline.realBalances.roiOnRoi || 0) + commission;
-                    await upline.save();
-                    totalDistributed += commission;
-                }
-                currentUser = upline;
-                currentLevel++;
-            }
-            user.cashbackStats.todayCashback = 0;
-            await user.save();
-        }
+        const { processDailyRoi } = require('../utils/roiOnRoiUtils');
+        const io = req.app.get('io');
+        const totalDistributed = await processDailyRoi(io);
 
         res.status(200).json({
             status: 'success',

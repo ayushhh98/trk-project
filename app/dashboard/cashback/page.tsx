@@ -103,15 +103,15 @@ export default function CashbackPage() {
                 totalRecovered: apiStats.recovery.totalRecovered,
                 pendingCashback: apiStats.cashback.pending,
                 dailyRate: apiStats.cashback.baseDailyRate,
-                referralVolume: apiStats.boostTier.referralVolume,
+                referralVolume: apiStats.boostTier?.referralVolume ?? 0,
                 boostMultiplier: apiStats.boostTier.multiplier,
                 sustainabilityCycle: {
                     hasReachedCap: apiStats.sustainabilityCycle.hasReachedCap,
                     currentCap: apiStats.sustainabilityCycle.currentCap,
                     capProgress: apiStats.sustainabilityCycle.capProgress,
                     remainingCap: apiStats.sustainabilityCycle.remainingCap,
-                    userCount: apiStats.sustainabilityCycle.capInfo.currentUserCount,
-                    threshold: apiStats.sustainabilityCycle.capInfo.activatedUserThreshold,
+                    userCount: apiStats.sustainabilityCycle?.capInfo?.currentUserCount ?? 0,
+                    threshold: apiStats.sustainabilityCycle?.capInfo?.activatedUserThreshold ?? 0,
                     requiresRedeposit: apiStats.sustainabilityCycle.requiresRedeposit
                 },
                 boostTierName: apiStats.boostTier.name,

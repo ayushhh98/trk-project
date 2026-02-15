@@ -135,7 +135,7 @@ export function PerformanceMetrics() {
                             <div className="space-y-1.5">
                                 <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Net Winnings</div>
                                 <div className={cn("text-2xl font-mono font-black", totalProfit >= 0 ? "text-emerald-400" : "text-rose-400")}>
-                                    {totalProfit >= 0 ? "+" : ""}{(isNaN(totalProfit) ? 0 : totalProfit).toFixed(2)} <span className="text-xs opacity-60">SC</span>
+                                    {totalProfit >= 0 ? "+" : ""}{(isNaN(totalProfit) ? 0 : totalProfit).toFixed(2)} <span className="text-xs opacity-60">USDT</span>
                                 </div>
                             </div>
                         </CardContent>
@@ -187,7 +187,7 @@ export function PerformanceMetrics() {
                             <div className="space-y-1.5">
                                 <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Lifetime Rewards</div>
                                 <div className="text-2xl font-mono font-black text-white">
-                                    {(isNaN(lifetimeEarnings) ? 0 : lifetimeEarnings).toFixed(2)} <span className="text-xs opacity-60">SC</span>
+                                    {(isNaN(lifetimeEarnings) ? 0 : lifetimeEarnings).toFixed(2)} <span className="text-xs opacity-60">USDT</span>
                                 </div>
                             </div>
                         </CardContent>
@@ -237,7 +237,7 @@ export function PerformanceMetrics() {
                             <div className="space-y-1.5">
                                 <div className="text-[10px] font-black uppercase text-white/40 tracking-widest">Projected Balance</div>
                                 <div className="text-2xl font-mono font-black text-white">
-                                    {(isNaN(creditEstimate) ? 0 : creditEstimate).toFixed(2)} <span className="text-xs opacity-60">SC</span>
+                                    {(isNaN(creditEstimate) ? 0 : creditEstimate).toFixed(2)} <span className="text-xs opacity-60">USDT</span>
                                 </div>
                             </div>
                         </CardContent>

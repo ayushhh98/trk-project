@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import {
   Card,
@@ -13,7 +13,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   ShieldCheck,
@@ -23,7 +23,7 @@ import {
   Wallet,
   Repeat,
   Gift,
-  ChevronRight,
+  ChevronDown,
   CheckCircle2,
   PlayCircle,
   UserPlus,
@@ -32,10 +32,14 @@ import {
   TrendingUp,
   Dices,
   Activity,
-  Lock
+  Lock,
+  Plus,
+  Minus,
+  AlertCircle
 } from "lucide-react";
 import Link from "next/link";
-import { SweepstakesExplainer } from "@/components/home/SweepstakesExplainer";
+import { cn } from "@/lib/utils";
+
 
 const steps = [
   {
@@ -117,26 +121,182 @@ const incomePosters = [
   }
 ];
 
+const faqs = [
+  {
+    q: "What is TRK Game?",
+    a: "TRK Game is a Web3 reward ecosystem where you play, earn, and grow through on-chain transparency and multiple income streams."
+  },
+  {
+    q: "How do I get started?",
+    a: "Connect a wallet, explore the practice balance, then activate your account with a 10 USDT deposit to unlock real earnings."
+  },
+  {
+    q: "What is a TRK code?",
+    a: "A TRK code is your referral code. Share it to invite new players and track team growth in your dashboard."
+  },
+  {
+    q: "How much does it cost to play?",
+    a: "Practice mode is free. Real play requires activation and uses your deposited balance."
+  },
+  {
+    q: "How do I win?",
+    a: "Win by playing the TRK games (like Dice 6X) and following the published mechanics. Payouts are handled on-chain."
+  },
+  {
+    q: "What are the income streams?",
+    a: "Dice wins, cashback protection, jackpot draws, club pool rewards, and ROI-on-ROI team income."
+  },
+  {
+    q: "How does the referral system work?",
+    a: "Invite teammates with your TRK code. As they activate and play, you earn team-based rewards across multiple levels."
+  },
+  {
+    q: "What are the referral percentages?",
+    a: "Percentages vary by level and are shown in your dashboard. The system supports rewards across multiple tiers."
+  },
+  {
+    q: "How do withdrawals work?",
+    a: "Withdrawals are requested in the dashboard and sent on-chain. Processing time depends on network conditions."
+  },
+  {
+    q: "Is my money safe?",
+    a: "Your balances and game outcomes are recorded on-chain for full transparency and security."
+  },
+  {
+    q: "What wallets are supported?",
+    a: "MetaMask, Trust Wallet, and WalletConnect-compatible wallets (including Ready)."
+  },
+  {
+    q: "How many games can I play per day?",
+    a: "Daily limits depend on your activation tier and balance. Your current limits are shown in the app."
+  },
+  {
+    q: "What happens if I lose?",
+    a: "Our ecosystem focus on sustainable growth and transparent mechanics. Please play responsibly."
+  },
+  {
+    q: "Can I play on mobile?",
+    a: "Yes. Use a mobile wallet or scan via WalletConnect to play from your phone."
+  },
+  {
+    q: "What is the practice account?",
+    a: "A sandbox balance for learning the game mechanics. Practice funds are not withdrawable."
+  }
+];
+
 export default function Home() {
-  const { isConnected, isLoading, user } = useWallet();
+  const { isConnected, user, connect, registerOnChain, isRegisteredOnChain } = useWallet();
   const router = useRouter();
+  const [refCode, setRefCode] = useState("");
+  const [refStatus, setRefStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
+  const [referrerAddress, setReferrerAddress] = useState<string | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [pendingRedirect, setPendingRedirect] = useState(false);
+  const [pendingRegister, setPendingRegister] = useState(false);
+  const [openFAQ, setOpenFAQ] = useState<number | null>(null);
 
   useEffect(() => {
-    if (isLoading) return;
-    if (typeof window !== "undefined") {
-      const lockHome = sessionStorage.getItem("trk_home_override");
-      if (lockHome === "1") {
-        sessionStorage.removeItem("trk_home_override");
-        return;
+    if (typeof window === "undefined") return;
+    const lockHome = sessionStorage.getItem("trk_home_override");
+    if (lockHome === "1") {
+      sessionStorage.removeItem("trk_home_override");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === "#join") {
+      const joinSection = document.getElementById("join");
+      if (joinSection) {
+        joinSection.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     }
-    if (!isConnected) return;
-    if (user?.role === "admin" || user?.role === "superadmin") {
-      router.push("/admin");
-    } else {
-      router.push("/dashboard");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = localStorage.getItem("trk_referrer_code");
+    if (stored) {
+      setRefCode(stored);
     }
-  }, [isLoading, isConnected, user, router]);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingRedirect) return;
+    if (isRegisteredOnChain) {
+      setPendingRedirect(false);
+      router.replace("/dashboard");
+    }
+  }, [pendingRedirect, isRegisteredOnChain, router]);
+
+  const resolveReferrer = async (code: string) => {
+    const trimmed = code.trim();
+    if (!trimmed) return null;
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/api\/?$/, "");
+    try {
+      const res = await fetch(`${apiBase}/api/referral/resolve/${trimmed}`);
+      const data = await res.json();
+      if (data?.status === "success" && data?.data?.walletAddress) {
+        return data.data.walletAddress as string;
+      }
+    } catch (err) {
+      console.error("Referral resolve failed:", err);
+    }
+    return null;
+  };
+
+  const validateReferral = async () => {
+    const trimmed = refCode.trim();
+    if (!trimmed) {
+      setRefStatus("invalid");
+      setReferrerAddress(null);
+      return false;
+    }
+    setRefStatus("checking");
+    const resolved = await resolveReferrer(trimmed);
+    if (resolved) {
+      setRefStatus("valid");
+      setReferrerAddress(resolved);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("trk_referrer_code", trimmed);
+      }
+      return true;
+    }
+    setRefStatus("invalid");
+    setReferrerAddress(null);
+    return false;
+  };
+
+  const startRegistration = async () => {
+    const ok = refStatus === "valid" ? true : await validateReferral();
+    if (!ok) {
+      setPendingRegister(false);
+      return;
+    }
+    setIsRegistering(true);
+    setPendingRedirect(true);
+    setPendingRegister(false);
+    await registerOnChain();
+    setIsRegistering(false);
+  };
+
+  useEffect(() => {
+    if (!pendingRegister) return;
+    if (!isConnected || !user) return;
+    void (async () => {
+      await startRegistration();
+    })();
+  }, [pendingRegister, isConnected, user]);
+
+  const handleRegister = async () => {
+    if (!isConnected) {
+      setPendingRegister(true);
+      await connect("WalletConnect");
+      return;
+    }
+    if (!user) return;
+    await startRegistration();
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -201,6 +361,208 @@ export default function Home() {
               </Link>
             </div>
           </motion.div>
+        </div>
+      </section>
+      {/* Why TRK? Section */}
+      <section id="why-trk" className="py-32 bg-black relative">
+        <div className="container mx-auto px-6">
+          <div className="max-w-4xl mx-auto text-center mb-20 space-y-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black tracking-[0.2em] uppercase"
+            >
+              Core Advantages
+            </motion.div>
+            <h2 className="text-5xl md:text-7xl font-display font-black text-white italic uppercase tracking-tighter">
+              Why <span className="text-primary italic">TRK Ecosystem?</span>
+            </h2>
+            <p className="text-lg text-white/40 max-w-2xl mx-auto uppercase tracking-widest leading-relaxed">
+              Merging high-yield mechanics with institutional-grade security and transparency.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              {
+                icon: Zap,
+                title: "Free to Start",
+                desc: "No upfront costs. Join and explore the ecosystem with zero barriers to entry.",
+                color: "text-blue-400",
+                bg: "bg-blue-400/10"
+              },
+
+              {
+                icon: Trophy,
+                title: "8X Win Potential",
+                desc: "Maximize your capital with up to 8X multipliers through optimized game logic.",
+                color: "text-amber-400",
+                bg: "bg-amber-400/10"
+              },
+              {
+                icon: ShieldCheck,
+                title: "Daily Cashback",
+                desc: "Industry-first losers protection. Recover up to 10% of losses automatically every midnight.",
+                color: "text-emerald-400",
+                bg: "bg-emerald-400/10"
+              },
+              {
+                icon: TrendingUp,
+                title: "7 Income Streams",
+                desc: "Direct, Passive, Club, ROI, and more. A multifaceted approach to wealth building.",
+                color: "text-rose-400",
+                bg: "bg-rose-400/10"
+              },
+              {
+                icon: Gem,
+                title: "Lucky Jackpots",
+                desc: "Continuous participation in automated draws with prize pools scaling to thousands.",
+                color: "text-purple-400",
+                bg: "bg-purple-400/10"
+              },
+              {
+                icon: Users,
+                title: "Passive Network",
+                desc: "Earn deep referral commissions up to 15 levels. True leverage for community leaders.",
+                color: "text-indigo-400",
+                bg: "bg-indigo-400/10"
+              },
+              {
+                icon: Lock,
+                title: "Fully Decentralized",
+                desc: "Non-custodial and transparent. Every transaction and outcome is verified on-chain.",
+                color: "text-orange-400",
+                bg: "bg-orange-400/10"
+              },
+              {
+                icon: Activity,
+                title: "Future Token",
+                desc: "Moving towards a 100% TRK Token Economy to drive scarcity and long-term value.",
+                color: "text-cyan-400",
+                bg: "bg-cyan-400/10"
+              }
+            ].map((p, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="group relative"
+              >
+                <div className="absolute -inset-0.5 bg-gradient-to-br opacity-0 group-hover:opacity-20 transition-opacity blur-xl pointer-events-none" />
+                <div className="h-full bg-white/[0.02] border border-white/10 p-8 rounded-[2.5rem] space-y-4 hover:bg-white/[0.05] hover:border-white/20 transition-all">
+                  <div className={`h-14 w-14 rounded-2xl ${p.bg} flex items-center justify-center ${p.color} group-hover:scale-110 transition-transform`}>
+                    <p.icon className="h-7 w-7" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-black text-white italic uppercase tracking-tight">{p.title}</h3>
+                    <p className="text-sm text-white/30 uppercase font-medium leading-relaxed tracking-wide">
+                      {p.desc}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Join / Registration Gate */}
+      <section id="join" className="py-24 bg-black/90 border-t border-white/5">
+        <div className="container mx-auto px-4">
+          <div className="max-w-2xl mx-auto">
+            <div className="rounded-[2.5rem] border border-white/10 bg-black/60 p-10 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+              <div className="text-center space-y-3 mb-8">
+                <div className="text-3xl md:text-4xl font-display font-black text-white">Join TRK Game</div>
+                <p className="text-white/50 text-sm">
+                  Register to unlock your referral code and rewards.
+                </p>
+                <div className="text-[10px] uppercase tracking-[0.3em] font-black text-primary">
+                  99,986 Bonus Spots Left
+                </div>
+                {user?.walletAddress && (
+                  <div className="text-[11px] font-mono text-white/40">
+                    {user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}
+                  </div>
+                )}
+              </div>
+
+              {isRegisteredOnChain ? (
+                <div className="text-center space-y-4">
+                  <div className="text-sm text-emerald-400 font-bold">
+                    Wallet verified. Your account is already registered. If you haven't already, your unique referral code is now active below.
+                    <div className="mt-4 p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col items-center gap-3">
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-black">Your Referral Code</div>
+                      <div className="text-2xl font-black text-primary tracking-widest">{user?.referralCode}</div>
+                      <Button size="sm" variant="outline" onClick={() => { if (user?.referralCode) navigator.clipboard.writeText(user.referralCode); alert("Referral code copied!"); }} className="h-8 border-white/10 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest rounded-lg">Copy Code</Button>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => router.push("/dashboard")}
+                    className="h-12 px-6 bg-primary text-black font-bold rounded-xl"
+                  >
+                    Continue to Dashboard
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.3em] font-black text-white/40">
+                      Referral Address (Required)
+                    </label>
+                    <div className="relative">
+                      <input
+                        value={refCode}
+                        onChange={(e) => {
+                          setRefCode(e.target.value);
+                          setRefStatus("idle");
+                          setReferrerAddress(null);
+                        }}
+                        onBlur={() => {
+                          if (refCode.trim()) void validateReferral();
+                        }}
+                        placeholder="Enter Referral Code (TRK...)"
+                        className="w-full h-14 rounded-2xl bg-black/40 border border-emerald-500/30 text-white px-5 pr-24 font-mono text-sm outline-none focus:border-emerald-400 transition-colors"
+                      />
+                      <span
+                        className={`absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold ${refStatus === "valid"
+                          ? "text-emerald-400"
+                          : refStatus === "invalid"
+                            ? "text-red-400"
+                            : "text-white/30"
+                          }`}
+                      >
+                        {refStatus === "checking"
+                          ? "Checking..."
+                          : refStatus === "valid"
+                            ? "Valid"
+                            : refStatus === "invalid"
+                              ? "Invalid"
+                              : ""}
+                      </span>
+                    </div>
+                    {referrerAddress && (
+                      <div className="text-xs text-emerald-400">
+                        Referrer: {referrerAddress.slice(0, 6)}...{referrerAddress.slice(-4)}
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleRegister}
+                    disabled={isRegistering || (isConnected && !user)}
+                    className="w-full h-14 rounded-2xl bg-primary text-black font-black uppercase tracking-widest"
+                  >
+                    {isRegistering
+                      ? "Check Wallet..."
+                      : isConnected
+                        ? "Register & Claim Bonus"
+                        : "Open WalletConnect"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -301,8 +663,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Sweepstakes Explainer */}
-      <SweepstakesExplainer />
+
 
       {/* Ecosystem Rewards Section */}
       <section id="ecosystem" className="py-32 bg-black/50 border-y border-white/5">
@@ -346,7 +707,7 @@ export default function Home() {
                   <div className="h-16 w-16 rounded-2xl bg-amber-500/20 flex items-center justify-center">
                     <Trophy className="h-8 w-8 text-amber-400" />
                   </div>
-                  <h3 className="text-4xl font-display font-black text-white">6️⃣ 🏢 Club Income</h3>
+                  <h3 className="text-4xl font-display font-black text-white">Club Income</h3>
                   <p className="text-lg text-white/70">
                     Designed for leaders. Receive a daily share of the <span className="text-amber-400 font-bold">8% Global Daily Turnover</span>.
                   </p>
@@ -634,6 +995,357 @@ export default function Home() {
                 </Button>
               </Link>
             </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* TRK Roadmap Section */}
+      <section id="roadmap" className="py-32 bg-black/40 border-t border-white/5 relative overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-[600px] bg-primary/5 blur-[120px] pointer-events-none" />
+        <div className="container mx-auto px-6 relative z-10">
+          <div className="max-w-4xl mx-auto text-center mb-16 space-y-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black tracking-[0.2em] uppercase"
+            >
+              Future Vision
+            </motion.div>
+            <h2 className="text-5xl md:text-7xl font-display font-black text-white italic uppercase tracking-tighter">
+              TRK Token <span className="text-primary">Roadmap</span>
+            </h2>
+            <p className="text-lg text-white/40 max-w-2xl mx-auto uppercase tracking-widest leading-relaxed">
+              Our strategic path towards a decentralized, TRK-powered economic ecosystem.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-4 gap-6">
+            {[
+              {
+                phase: "Phase 1",
+                model: "100% USDT",
+                status: "ACTIVE",
+                desc: "Foundation phase focusing on pure stablecoin participation and trust building.",
+                color: "from-primary to-primary/60"
+              },
+              {
+                phase: "Phase 2",
+                model: "USDT or TRK",
+                status: "UPCOMING",
+                desc: "Introduction of TRK token as an alternative entry method for users.",
+                color: "from-blue-500 to-indigo-600"
+              },
+              {
+                phase: "Phase 3",
+                model: "50/50 Hybrid",
+                status: "PLANNED",
+                desc: "Balanced adoption of both currencies to stabilize the token economy.",
+                color: "from-purple-500 to-pink-600"
+              },
+              {
+                phase: "Phase 4",
+                model: "100% TRK Economy",
+                status: "GOAL",
+                desc: "Final transition to a full utility-driven TRK token ecosystem.",
+                color: "from-orange-500 to-amber-600"
+              }
+            ].map((p, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="group relative"
+              >
+                <div className="absolute -inset-1 bg-gradient-to-br opacity-20 group-hover:opacity-40 transition-opacity blur-lg pointer-events-none" />
+                <Card className="h-full bg-white/[0.02] border-white/10 rounded-[2.5rem] p-8 space-y-6 flex flex-col hover:bg-white/[0.04] transition-all relative overflow-hidden">
+                  <div className={`h-1 absolute top-0 left-0 w-full bg-gradient-to-r ${p.color}`} />
+                  <div className="flex justify-between items-start">
+                    <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em]">{p.phase}</div>
+                    <div className={cn(
+                      "text-[8px] font-black px-2 py-1 rounded-md tracking-widest",
+                      p.status === "ACTIVE" ? "bg-primary text-black" : "bg-white/5 text-white/40"
+                    )}>
+                      {p.status}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-xl font-black text-white uppercase italic leading-none">{p.model}</h3>
+                    <div className="text-[10px] font-black text-primary/60 uppercase tracking-widest">Economic Model</div>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-white/40 uppercase font-medium flex-grow">
+                    {p.desc}
+                  </p>
+                  <div className="pt-4 border-t border-white/5 flex items-center gap-2 group-hover:text-primary transition-colors">
+                    <div className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Projected Roadmap</span>
+                  </div>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Security & Policies Section */}
+      <section id="security" className="py-32 bg-black border-t border-white/5">
+        <div className="container mx-auto px-6">
+          <div className="grid lg:grid-cols-2 gap-20 items-center">
+            <div className="space-y-10">
+              <div className="space-y-4">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black tracking-[0.2em] uppercase"
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  Protection Protocol
+                </motion.div>
+                <h2 className="text-5xl md:text-6xl font-display font-black text-white italic uppercase tracking-tighter">
+                  Security & <span className="text-emerald-500 text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-600">Policies</span>
+                </h2>
+                <p className="text-lg text-white/40 uppercase tracking-widest leading-relaxed">
+                  Rigorous standards ensuring a safe and fair environment for all participants.
+                </p>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                {[
+                  { icon: CheckCircle2, label: "18+ Exclusive", desc: "Strict adult-only participation policy." },
+                  { icon: Lock, label: "One Account Rule", desc: "Prevention of sybil attacks and multi-accounting." },
+                  { icon: Wallet, label: "Self-Custody", desc: "You maintain full control of your private keys." },
+                  { icon: Zap, label: "BEP20 Standard", desc: "Native Binance Smart Chain efficiency." },
+                  { icon: Activity, label: "On-Chain Logic", desc: "Fully automated smart contract execution." },
+                  { icon: Users, label: "Transparent", desc: "Every transaction is verifiable on BscScan." }
+                ].map((p, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="p-5 rounded-3xl bg-white/[0.02] border border-white/10 flex items-center gap-4 hover:bg-white/[0.05] transition-all group"
+                  >
+                    <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                      <p.icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-white uppercase tracking-tight">{p.label}</div>
+                      <div className="text-[9px] text-white/20 font-bold uppercase">{p.desc}</div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Risk Notice */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                className="p-6 rounded-[2rem] bg-amber-500/5 border border-amber-500/10 space-y-3"
+              >
+                <div className="flex items-center gap-2 text-amber-500">
+                  <AlertCircle className="h-5 w-5" />
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Risk Notice</span>
+                </div>
+                <p className="text-xs leading-relaxed text-amber-500/60 font-medium italic">
+                  Blockchain transactions are irreversible. Participate responsibly. Real-time implementation is working properly across all ecosystem modules.
+                </p>
+              </motion.div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 bg-emerald-500/10 blur-[100px] pointer-events-none" />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                className="relative rounded-[4rem] border border-white/10 bg-white/[0.02] backdrop-blur-3xl p-2 overflow-hidden shadow-2xl"
+              >
+                <div className="bg-black/90 rounded-[3.8rem] p-10 space-y-8">
+                  <div className="space-y-2">
+                    <div className="text-[10px] text-emerald-500 font-black uppercase tracking-widest">Security Audit</div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-3xl font-black text-white uppercase italic">Status</div>
+                      <span className="text-green-400 font-black tracking-widest text-xl italic">PASSED</span>
+                    </div>
+                    <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        whileInView={{ width: "98%" }}
+                        className="h-full bg-emerald-500"
+                        transition={{ duration: 2 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <div className="text-[9px] text-white/20 font-black uppercase tracking-widest">Liquidity</div>
+                      <div className="text-xl font-black text-white italic">LOCKED</div>
+                    </div>
+                    <div className="space-y-1 text-right">
+                      <div className="text-[9px] text-white/20 font-black uppercase tracking-widest">Contract</div>
+                      <div className="text-xl font-black text-white italic">VERIFIED</div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-3xl bg-white/5 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                        <Activity className="h-4 w-4" />
+                      </div>
+                      <div className="text-[10px] font-black text-white uppercase tracking-widest">System Health</div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[9px] font-black uppercase">
+                        <span className="text-white/40">Uptime</span>
+                        <span className="text-emerald-400">100.0%</span>
+                      </div>
+                      <div className="flex justify-between text-[9px] font-black uppercase">
+                        <span className="text-white/40">Latent Buffer</span>
+                        <span className="text-emerald-400">Optimal</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section id="faq" className="py-32 bg-black/80 border-t border-white/5">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto text-center mb-16 space-y-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white/50 text-[10px] font-black tracking-[0.2em] uppercase"
+            >
+              FAQ Section
+            </motion.div>
+            <h2 className="text-5xl md:text-6xl font-display font-black text-white">
+              Frequently Asked Questions
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              Everything you need to know before you start.
+            </p>
+          </div>
+
+          <div className="max-w-3xl mx-auto space-y-4">
+            {faqs.map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className={`group rounded-2xl border transition-all duration-300 ${openFAQ === i
+                  ? "bg-white/10 border-primary/50 shadow-lg shadow-primary/10"
+                  : "bg-white/5 border-white/10 hover:border-white/20"
+                  }`}
+              >
+                <button
+                  onClick={() => setOpenFAQ(openFAQ === i ? null : i)}
+                  className="w-full flex items-center justify-between px-6 py-5 text-left"
+                >
+                  <span className={`font-display font-bold text-lg transition-colors ${openFAQ === i ? "text-primary" : "text-white"
+                    }`}>
+                    {item.q}
+                  </span>
+                  <div className={`p-2 rounded-full transition-colors ${openFAQ === i ? "bg-primary/20 text-primary" : "bg-white/5 text-white/50 group-hover:text-white"
+                    }`}>
+                    {openFAQ === i ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {openFAQ === i && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-6 pb-6 pt-0 text-muted-foreground leading-relaxed">
+                        {item.a}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            ))}
+          </div>
+
+          <div className="mt-16 max-w-3xl mx-auto rounded-[2rem] border border-white/10 bg-white/5 p-8 text-center space-y-4">
+            <p className="text-white/60">
+              Still have questions? Join our community or contact support.
+            </p>
+            <Link href="/auth">
+              <Button size="lg" className="h-14 px-10 bg-primary text-black font-black rounded-2xl">
+                Get Started
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Terms Section */}
+      <section id="terms" className="py-28 bg-black border-t border-white/5">
+        <div className="container mx-auto px-4">
+          <div className="max-w-5xl mx-auto grid md:grid-cols-[1.2fr_1fr] gap-10 items-start">
+            <div className="space-y-6">
+              <motion.div
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black tracking-[0.2em] uppercase"
+              >
+                Terms
+              </motion.div>
+              <h2 className="text-4xl md:text-5xl font-display font-black text-white">
+                Terms & Disclosures
+              </h2>
+              <p className="text-white/60 text-sm leading-relaxed">
+                By using TRK Game, you agree to the platform terms, sweepstakes rules, and risk disclosures.
+                Please review the legal documentation before participating in real play.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <Link href="/legal/sweepstakes">
+                  <Button size="lg" className="h-12 px-6 bg-white text-black font-bold rounded-xl">
+                    View Terms
+                  </Button>
+                </Link>
+                <Link href="/auth">
+                  <Button size="lg" variant="outline" className="h-12 px-6 border-white/10 text-white font-bold rounded-xl hover:bg-white/5">
+                    Launch App
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {[
+                {
+                  title: "Fair Play Policy",
+                  desc: "Game outcomes are recorded on-chain and follow published mechanics for transparency."
+                },
+                {
+                  title: "Risk Awareness",
+                  desc: "Always play within your limits. Blockchain transactions are final once confirmed."
+                },
+                {
+                  title: "Security Reminder",
+                  desc: "Use official links and never share your seed phrase with anyone."
+                }
+              ].map((item) => (
+                <div
+                  key={item.title}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-5"
+                >
+                  <div className="text-sm font-bold text-white">{item.title}</div>
+                  <p className="text-xs text-white/50 mt-2 leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>

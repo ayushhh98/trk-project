@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { Menu, X, ArrowRight, LayoutDashboard, LogOut, ShieldCheck, BarChart3, Users, Rocket, Wallet } from "lucide-react";
+import { Menu, X, ArrowRight, LayoutDashboard, LogOut, ShieldCheck, BarChart3, Users, Wallet } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWallet } from "@/components/providers/WalletProvider";
@@ -11,8 +11,10 @@ import { useRouter } from "next/navigation";
 
 const navLinks = [
     { name: "How it Works", href: "#how-it-works" },
-    { name: "Incomes", href: "#incomes" },
+    { name: "Incomes", href: "#ecosystem" },
     { name: "Safe & Secure", href: "#safety" },
+    { name: "FAQ", href: "#faq" },
+    { name: "Terms", href: "#terms" },
 ];
 
 export function Navbar() {
@@ -93,19 +95,6 @@ export function Navbar() {
                         </>
                     ) : (
                         <div className="flex items-center gap-3">
-                            <Link href="/dashboard/practice">
-                                <Button className="relative overflow-hidden bg-white/5 hover:bg-white/10 text-white font-bold px-8 rounded-full border border-white/10 hover:border-primary/50 transition-all duration-300 group/game shadow-[0_0_20px_rgba(0,0,0,0.5)]">
-                                    <span className="relative z-10 flex items-center gap-3">
-                                        <span className="tracking-wide">GAME ZONE</span>
-                                        <div className="bg-primary/20 p-1.5 rounded-full group-hover/game:bg-primary group-hover/game:text-black transition-colors duration-300">
-                                            <Rocket className="h-4 w-4" />
-                                        </div>
-                                    </span>
-                                    {/* Hover Gradient Effect */}
-                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover/game:translate-x-full transition-transform duration-1000 ease-in-out" />
-                                </Button>
-                            </Link>
-
                             <div className="relative">
                                 <button
                                     onClick={() => setIsProfileOpen(!isProfileOpen)}
@@ -254,7 +243,7 @@ export function Navbar() {
                                                     className="w-full h-14 rounded-2xl bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 hover:border-red-500/30 flex items-center justify-center gap-3 text-red-400 font-black text-sm uppercase tracking-widest transition-all group/logout"
                                                 >
                                                     <LogOut className="h-4 w-4 group-hover/logout:-translate-x-1 transition-transform" />
-                                                    Terminate Session
+                                                    Log Out
                                                 </button>
                                             </div>
                                         </motion.div>
@@ -310,11 +299,6 @@ export function Navbar() {
                                     </>
                                 ) : (
                                     <>
-                                        <Link href="/dashboard/practice" onClick={() => setIsMobileMenuOpen(false)}>
-                                            <Button className="w-full h-12 bg-gradient-to-r from-primary to-yellow-500 text-black font-black rounded-xl">
-                                                Go to Game Zone 🚀
-                                            </Button>
-                                        </Link>
                                         <Link href="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
                                             <Button variant="outline" className="w-full h-12 border-white/10 text-white font-bold">
                                                 My Account Details

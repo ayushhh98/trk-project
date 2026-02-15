@@ -54,8 +54,12 @@ export default function IncomePage() {
             withdrawableBalance: realBalances.cash || 0,
             winnersIncome: realBalances.winners || 0,
             directIncome: realBalances.directLevel || 0,
+            teamWinnersIncome: realBalances.teamWinners || 0,
             cashbackIncome: realBalances.cashback || 0,
-            totalPending: (realBalances.directLevel || 0) + (realBalances.winners || 0),
+            roiOnRoiIncome: realBalances.roiOnRoi || 0,
+            clubIncome: realBalances.club || 0,
+            luckyIncome: realBalances.lucky || 0,
+            totalPending: (realBalances.directLevel || 0) + (realBalances.winners || 0) + (realBalances.teamWinners || 0) + (realBalances.cashback || 0) + (realBalances.roiOnRoi || 0) + (realBalances.club || 0) + (realBalances.lucky || 0),
             totalUnified: realBalances.totalUnified || 0,
             directReferrals: user?.directReferrals || 0,
             unlockedLevels: user?.activation?.allStreamsUnlocked ? 15 : Math.min(user?.directReferrals || 0, 15),
@@ -75,56 +79,94 @@ export default function IncomePage() {
     const activeIncomeStreams = [
         {
             id: 1,
-            name: "Winners 8X Protocol",
+            name: "Winners Income",
             icon: Trophy,
-            color: "primary", // maps to primary/yellow
-            description: "Advanced game reward system with 8X capital growth",
+            color: "primary",
+            description: "Direct rewards from your successful gaming rounds. Earn 2X on every win!",
             earned: incomeData.winnersIncome,
             details: [
-                { label: "Cash Output", value: "2X", subtext: "Direct to Wallet" },
-                { label: "Growth Asset", value: "6X", subtext: "Auto-Reinvested" },
+                { label: "Capital Growth", value: "8X", subtext: "Total Protocol Yield" },
+                { label: "Cash Payout", value: "2X", subtext: "Instant to Vault" },
             ],
             requirement: "Strategic victory in active rounds",
-            badge: "CORE_YIELD"
+            badge: "DIRECT_WIN"
         },
         {
             id: 2,
-            name: "Direct Network Commission",
+            name: "Direct Level Income",
             icon: Users,
             color: "blue",
-            description: "High-velocity team growth incentives across 15 levels",
+            description: "Deep-network commissions from 15 levels of referrals.",
             earned: incomeData.directIncome,
             rates: [
-                { levels: "Tier 1", rate: "5.0%" },
-                { levels: "Tier 2", rate: "2.0%" },
-                { levels: "Tier 3-5", rate: "1.0%" },
-                { levels: "Tier 6-15", rate: "0.5%" },
+                { levels: "Level 1", rate: "5.0%" },
+                { levels: "Level 2", rate: "2.0%" },
+                { levels: "Level 3-5", rate: "1.0%" },
+                { levels: "Level 6-15", rate: "0.5%" },
             ],
-            requirement: "Valid Direct Link Activation",
-            badge: "NETWORK_NODE"
+            requirement: "Referral node activation required",
+            badge: "TEAM_NODES"
         },
         {
             id: 3,
-            name: "Team Profit Share",
+            name: "Winners Level Income",
             icon: Award,
             color: "green",
-            description: "Deep-level referral rewards from team-wide victories",
-            earned: 0, // Placeholder
+            description: "Override commission from your team's victories. Earn 15% across 15 levels.",
+            earned: incomeData.teamWinnersIncome,
             rates: [
-                { levels: "L1-L2", rate: "Hybrid" },
-                { levels: "L3-L15", rate: "Fractional" },
+                { levels: "Total Pool", rate: "15.0%" },
+                { levels: "Distribution", rate: "15 Levels" },
             ],
-            totalPool: "15% TOTAL",
             requirement: "Active team participation required",
-            badge: "ELITE_OVERRIDE"
+            badge: "OVERRIDE"
+        },
+        {
+            id: 4,
+            name: "Losers Cashback",
+            icon: Shield,
+            color: "red",
+            description: "Mitigation protocol providing 5% recovery on net losses.",
+            earned: incomeData.cashbackIncome,
+            details: [
+                { label: "Recovery Rate", value: "5%", subtext: "Net Loss Protection" }
+            ],
+            requirement: "Real-mode losses detected",
+            badge: "PROTECTION"
+        },
+        {
+            id: 5,
+            name: "Losers ROI on ROI",
+            icon: Gift,
+            color: "purple",
+            description: "Referral cashback rewards. Earn 1% when your team claims protection.",
+            earned: incomeData.roiOnRoiIncome,
+            details: [
+                { label: "Incentive Rate", value: "1%", subtext: "Team Yield Support" }
+            ],
+            requirement: "Direct referral protection claims",
+            badge: "BETA_INCENTIVE"
+        },
+        {
+            id: 6,
+            name: "Club Income",
+            icon: Crown,
+            color: "yellow",
+            description: "Global 5% pool distribution based on team volume and rank.",
+            earned: incomeData.clubIncome,
+            badge: "POOL_SHARE",
+            requirement: "Rank qualification and volume targets"
+        },
+        {
+            id: 7,
+            name: "Lucky Draw Income",
+            icon: Ticket,
+            color: "teal",
+            description: "Win massive prizes from the 2% global lucky draw pool.",
+            earned: incomeData.luckyIncome,
+            badge: "JACKPOT",
+            requirement: "Active ticket nodes required"
         }
-    ];
-
-    const passiveStreams = [
-        { id: 4, name: "Loss Mitigation", icon: Shield, desc: "1% Loss recovery protocol", link: "/dashboard/cashback", status: "ACTIVE", earned: incomeData.cashbackIncome },
-        { id: 5, name: "Lucky Node", icon: Ticket, desc: "Randomized jackpot cycles", link: "/dashboard/lucky-draw", status: "READY" },
-        { id: 6, name: "Grand Club", icon: Crown, desc: "Global volume allocation", link: "/dashboard/club", status: "RANK_REQD" },
-        { id: 7, name: "Practice Yield", icon: Gift, desc: "Infinite level referral node", link: "/dashboard/referral", status: "ALWAYS_ON" }
     ];
 
     const container = {
@@ -160,6 +202,7 @@ export default function IncomePage() {
                                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 leading-none">Yield_Control_v4.2</span>
                             </div>
                             <h1 className="text-2xl font-display font-black text-white tracking-tight">Income Portfolio</h1>
+                            <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">Currently supporting 7 active income types</p>
                         </div>
                     </div>
 
@@ -207,8 +250,20 @@ export default function IncomePage() {
                                     <div className="text-6xl font-mono font-black text-white tracking-tighter shadow-emerald-500/20 drop-shadow-lg">
                                         {incomeData.totalUnified.toFixed(2)} <span className="text-2xl text-emerald-400">USDT</span>
                                     </div>
-                                    <div className="text-sm font-medium text-white/40 max-w-md leading-relaxed">
-                                        Aggregated liquidity from Gaming, Network Commission, Winners Protocol, and Cashback reserves.
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-2 pt-4 border-t border-white/5">
+                                        <div className="flex flex-col">
+                                            <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Total_Deposited</span>
+                                            <span className="text-sm font-mono font-bold text-white/60">{(user?.activation?.totalDeposited || 0).toFixed(2)} USDT</span>
+                                        </div>
+                                        <div className="flex flex-col border-white/10 sm:border-l sm:pl-6">
+                                            <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Game_Balance</span>
+                                            <span className="text-sm font-mono font-bold text-white/60">{(incomeData.gamingBalance || 0).toFixed(2)} USDT</span>
+                                        </div>
+                                        <div className="flex flex-col border-white/10 lg:border-l lg:pl-6">
+                                            <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Cash_Balance_Vault</span>
+                                            <span className="text-sm font-mono font-bold text-emerald-500/60">{(incomeData.withdrawableBalance || 0).toFixed(2)} USDT</span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -328,7 +383,16 @@ export default function IncomePage() {
                                                         size="sm"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleWithdraw(stream.id === 1 ? 'winners' : stream.id === 2 ? 'directLevel' : 'club');
+                                                            const typeMap: Record<number, string> = {
+                                                                1: 'winners',
+                                                                2: 'directLevel',
+                                                                3: 'teamWinners',
+                                                                4: 'cashback',
+                                                                5: 'roiOnRoi',
+                                                                6: 'club',
+                                                                7: 'lucky'
+                                                            };
+                                                            handleWithdraw(typeMap[stream.id] || 'cash');
                                                         }}
                                                         className="mt-2 h-7 px-3 bg-white/10 hover:bg-white text-white hover:text-black font-black text-[9px] uppercase tracking-widest rounded-lg transition-all"
                                                     >
@@ -421,56 +485,12 @@ export default function IncomePage() {
                     </div>
                 </div>
 
-                {/* Satellite Passive Nodes */}
-                <div className="space-y-8">
-                    <div className="flex items-center gap-4">
-                        <div className="h-10 w-1 bg-blue-500 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.8)]" />
-                        <h2 className="text-2xl font-display font-black text-white tracking-tight uppercase tracking-wider">Secondary Yield Nodes</h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {passiveStreams.map((stream, idx) => (
-                            <motion.div
-                                key={stream.id}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: 0.5 + idx * 0.1 }}
-                            >
-                                <Link href={stream.link}>
-                                    <Card className="h-full border-white/5 bg-white/[0.01] hover:bg-white/[0.04] hover:border-primary/20 rounded-[2rem] transition-all duration-500 cursor-pointer group p-8 relative overflow-hidden">
-                                        <div className="absolute top-0 right-0 p-6 opacity-0 group-hover:opacity-10 transition-opacity">
-                                            <stream.icon className="h-16 w-16 text-primary" />
-                                        </div>
-
-                                        <div className="flex items-center justify-between mb-8">
-                                            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 text-white/40 group-hover:text-primary group-hover:border-primary/20 group-hover:bg-primary/5 transition-all">
-                                                <stream.icon className="h-6 w-6" />
-                                            </div>
-                                            <span className="text-[8px] font-mono p-1 px-2 rounded-md bg-white/5 border border-white/10 text-white/20 group-hover:text-primary/60 group-hover:border-primary/10 transition-all">{stream.status}</span>
-                                        </div>
-
-                                        <h3 className="text-xl font-black text-white mb-2 leading-none">{stream.name}</h3>
-                                        {stream.earned !== undefined && stream.earned > 0 && (
-                                            <div className="text-sm font-mono text-green-500 mb-1 font-bold">+${stream.earned.toFixed(2)} Realized</div>
-                                        )}
-                                        <p className="text-xs text-muted-foreground leading-relaxed font-medium">{stream.desc}</p>
-
-                                        <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
-                                            <span className="text-[10px] font-black text-primary uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Initialize</span>
-                                            <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                                        </div>
-                                    </Card>
-                                </Link>
-                            </motion.div>
-                        ))}
-                    </div>
-                </div>
 
                 {/* Final Ecosystem Manifest */}
                 <motion.div
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.8 }}
+                    transition={{ delay: 1 }} // Slightly delayed for better sequence
                 >
                     <Card className="rounded-[3rem] border-primary/20 bg-gradient-to-r from-primary/10 via-transparent to-transparent overflow-hidden relative">
                         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none" />
@@ -488,7 +508,7 @@ export default function IncomePage() {
                                 <div className="text-center md:text-right shrink-0">
                                     <div className="text-[10px] font-black uppercase text-white/30 mb-2 tracking-[0.3em]">Combined_Net_Earning</div>
                                     <div className="text-5xl font-mono font-black text-primary tracking-tighter">
-                                        ${(incomeData.gamingBalance + incomeData.withdrawableBalance + incomeData.totalPending).toFixed(2)}
+                                        ${incomeData.totalUnified.toFixed(2)}
                                     </div>
                                     <div className="mt-2 text-[10px] font-mono text-green-500 uppercase font-black">+12.4% AP_24H</div>
                                 </div>

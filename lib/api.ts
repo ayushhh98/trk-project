@@ -962,6 +962,14 @@ export const depositAPI = {
             body: JSON.stringify({ walletType, amount, toAddress }),
         });
     },
+
+    // Manual top-up to Lucky Draw Wallet
+    luckyTopup: async (fromWallet: string, amount: number) => {
+        return apiRequest('/deposit/lucky-topup', {
+            method: 'POST',
+            body: JSON.stringify({ fromWallet, amount }),
+        });
+    },
 };
 
 // Rewards API (Sweepstakes Model)

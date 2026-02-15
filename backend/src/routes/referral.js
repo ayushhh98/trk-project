@@ -107,8 +107,38 @@ router.get('/stats', auth, async (req, res) => {
 
         // Fetch detailed Level 1 data
         const level1Members = await User.find({ referredBy: user._id })
-            .select('walletAddress activation createdAt lastLoginAt name email referralCode')
+            .select('walletAddress activation createdAt lastLoginAt name email referralCode deposits')
             .limit(20);
+
+        const level1Details = level1Members.map(m => {
+            const walletShort = m.walletAddress
+                ? `${m.walletAddress.slice(0, 6)}...${m.walletAddress.slice(-4)}`
+                : 'N/A';
+            const email = m.email || '';
+            const maskedEmail = email
+                ? `${email.slice(0, 2)}***@${email.split('@')[1] || ''}`
+                : '';
+
+            // Calculate total deposited by this referral
+            const totalDeposited = (m.deposits || []).reduce((sum, dep) => sum + (dep.amount || 0), 0);
+
+            // Check online status from global map
+            const isOnline = global.onlineUsers ? global.onlineUsers.has(m._id.toString()) : false;
+
+            return {
+                id: m._id,
+                name: m.name || '',
+                email: maskedEmail,
+                referralCode: m.referralCode || '',
+                address: walletShort,
+                tier: m.activation?.tier || 'none',
+                joined: m.createdAt,
+                lastActive: m.lastLoginAt,
+                active: m.lastLoginAt && (new Date() - m.lastLoginAt < 24 * 60 * 60 * 1000),
+                isOnline,
+                totalDeposited
+            };
+        });
 
         // Real Growth Data (Mocking last 7 days but can be derived in future)
         const growthData = [
@@ -136,25 +166,7 @@ router.get('/stats', auth, async (req, res) => {
                     tier2Percent: realStats.totalMembers > 0 ? Math.round((realStats.tier2Count / realStats.totalMembers) * 100) : 0
                 },
                 levelStats: realStats.levelStats,
-                level1Details: level1Members.map(m => {
-                    const walletShort = m.walletAddress
-                        ? `${m.walletAddress.slice(0, 6)}...${m.walletAddress.slice(-4)}`
-                        : 'N/A';
-                    const email = m.email || '';
-                    const maskedEmail = email
-                        ? `${email.slice(0, 2)}***@${email.split('@')[1] || ''}`
-                        : '';
-                    return {
-                        name: m.name || '',
-                        email: maskedEmail,
-                        referralCode: m.referralCode || '',
-                        address: walletShort,
-                        tier: m.activation?.tier || 'none',
-                        joined: m.createdAt,
-                        lastActive: m.lastLoginAt,
-                        active: m.lastLoginAt && (new Date() - m.lastLoginAt < 24 * 60 * 60 * 1000)
-                    };
-                }),
+                level1Details,
                 growthData,
                 practiceRewardStructure: Object.entries(PRACTICE_REFERRAL_RATES).map(([key, val]) => ({
                     levels: key === '1' ? 'Level 1' : `Level ${key}`,
@@ -206,7 +218,7 @@ router.post('/apply', auth, async (req, res) => {
         res.status(200).json({
             status: 'success',
             message: 'Referral successful',
-            data: { referredBy: `${referrer.walletAddress.slice(0, 6)}...${referrer.walletAddress.slice(-4)}` }
+            data: { referredBy: `${referrer.walletAddress?.slice(0, 6)}...${referrer.walletAddress?.slice(-4)}` }
         });
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'Failed to apply referral code' });
@@ -233,7 +245,7 @@ router.get('/commissions', auth, async (req, res) => {
             }
 
             return {
-                user: c.fromUser ? `${c.fromUser.walletAddress.slice(0, 6)}...${c.fromUser.walletAddress.slice(-4)}` : 'Unknown',
+                user: c.fromUser ? `${c.fromUser.walletAddress?.slice(0, 6)}...${c.fromUser.walletAddress?.slice(-4)}` : 'Unknown',
                 level: c.level,
                 amount: c.amount,
                 time: timeAgo,

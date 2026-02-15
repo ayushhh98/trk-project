@@ -48,9 +48,13 @@ export default function LuckyDrawPage() {
     const [ticketQuantity, setTicketQuantity] = useState(1);
     const [isPurchasing, setIsPurchasing] = useState(false);
     const [purchaseMethod, setPurchaseMethod] = useState<'wallet' | 'game'>('wallet');
+    const [showTopup, setShowTopup] = useState(false);
+    const [isToppingUp, setIsToppingUp] = useState(false);
+    const [topupAmount, setTopupAmount] = useState(10);
+    const [topupSource, setTopupSource] = useState<'cash' | 'game' | 'cashback' | 'roiOnRoi' | 'winners'>('cash');
 
     // Restore full useWallet destructuring to fix missing variables
-    const { address, user, realBalances, buyLuckyDrawTickets, buyTicketsWithGameBalance } = useWallet();
+    const { address, user, realBalances, buyLuckyDrawTickets, buyTicketsWithGameBalance, topupLuckyWallet } = useWallet();
 
     const fetchStatus = useCallback(async () => {
         try {
@@ -94,14 +98,45 @@ export default function LuckyDrawPage() {
                 fetchStatus(); // Refresh full state
             };
 
+            const onDrawComplete = (data: any) => {
+                toast.success(`Draw Complete for Round #${data.roundNumber}!`, {
+                    description: `${data.totalWinners} winners selected. Check your entries!`
+                });
+                fetchStatus();
+            };
+
+            const onWinnerAnnounced = (data: any) => {
+                // Update recent winners list dynamically
+                setJackpotData(prev => ({
+                    ...prev,
+                    recentWinners: [
+                        { wallet: data.wallet, prize: `$${data.prize.toLocaleString()}`, rank: data.rank },
+                        ...prev.recentWinners
+                    ].slice(0, 5)
+                }));
+            };
+
+            const onTurnoverUpdate = (data: any) => {
+                // If the backend doesn't broadcast the prize pool directly, 
+                // we can estimate it as 70% of revenue or just use the turnover to trigger a refresh
+                // For now, let's just refresh status if turnover changes significantly
+                fetchStatus();
+            };
+
             currentSocket.on('jackpot:status_update', onStatusUpdate);
             currentSocket.on('jackpot:ticket_sold', onTicketSold);
             currentSocket.on('jackpot:new_round', onNewRound);
+            currentSocket.on('jackpot:draw_complete', onDrawComplete);
+            currentSocket.on('jackpot:winner_announced', onWinnerAnnounced);
+            currentSocket.on('platform:turnover_update', onTurnoverUpdate);
 
             return () => {
                 currentSocket.off('jackpot:status_update', onStatusUpdate);
                 currentSocket.off('jackpot:ticket_sold', onTicketSold);
                 currentSocket.off('jackpot:new_round', onNewRound);
+                currentSocket.off('jackpot:draw_complete', onDrawComplete);
+                currentSocket.off('jackpot:winner_announced', onWinnerAnnounced);
+                currentSocket.off('platform:turnover_update', onTurnoverUpdate);
             };
         }
     }, [fetchStatus]);
@@ -204,6 +239,45 @@ export default function LuckyDrawPage() {
                     </motion.div>
                 </div>
 
+                {/* Smart Entry Protocol (New) */}
+                <div className="grid md:grid-cols-3 gap-6">
+                    <Card className="bg-white/[0.02] border-white/5 rounded-3xl p-8 space-y-4 hover:bg-white/[0.04] transition-all group border-0 shadow-lg">
+                        <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                            <Zap className="h-6 w-6" />
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest">20% Auto-Credit</h3>
+                            <p className="text-[10px] leading-relaxed text-white/40 uppercase font-medium">
+                                20% of your <span className="text-emerald-400">Daily Cashback</span> and <span className="text-emerald-400">ROI Yield</span> is automatically diverted to the Lucky Wallet.
+                            </p>
+                        </div>
+                    </Card>
+
+                    <Card className="bg-white/[0.02] border-white/5 rounded-3xl p-8 space-y-4 hover:bg-white/[0.04] transition-all group border-0 shadow-lg">
+                        <div className="h-12 w-12 rounded-2xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-500 group-hover:scale-110 transition-transform">
+                            <Ticket className="h-6 w-6" />
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest">Auto-Participation</h3>
+                            <p className="text-[10px] leading-relaxed text-white/40 uppercase font-medium">
+                                Once your balance reaches <span className="text-pink-400">10 USDT</span>, the system automatically secures your participation ticket.
+                            </p>
+                        </div>
+                    </Card>
+
+                    <Card className="bg-white/[0.02] border-white/5 rounded-3xl p-8 space-y-4 hover:bg-white/[0.04] transition-all group border-0 shadow-lg">
+                        <div className="h-12 w-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 group-hover:scale-110 transition-transform">
+                            <Shield className="h-6 w-6" />
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest">Withdrawal Protocol</h3>
+                            <p className="text-[10px] leading-relaxed text-white/40 uppercase font-medium">
+                                Accumulate your wins or withdraw. <span className="text-amber-400">10% Fee</span> applied on withdrawals to ensure prize pool sustainability.
+                            </p>
+                        </div>
+                    </Card>
+                </div>
+
                 {/* Interaction Grid */}
                 <div className="grid lg:grid-cols-12 gap-10 items-start">
                     {/* Left: Purchase Terminal */}
@@ -226,14 +300,37 @@ export default function LuckyDrawPage() {
                                     <div className="p-6 rounded-[2rem] bg-gradient-to-br from-pink-500/10 to-transparent border border-pink-500/10 space-y-4">
                                         <div className="flex justify-between items-center">
                                             <div className="text-[10px] font-black text-pink-500/80 uppercase tracking-widest">Lucky Wallet</div>
-                                            <Zap className="h-4 w-4 text-pink-500 animate-pulse" />
+                                            <div className="flex items-center gap-2">
+                                                <Zap className="h-4 w-4 text-pink-500 animate-pulse" />
+                                                <button
+                                                    onClick={() => setShowTopup(true)}
+                                                    className="h-6 px-3 rounded-full bg-pink-500 text-[8px] font-black text-white hover:bg-pink-400 transition-colors uppercase tracking-widest"
+                                                >
+                                                    Manual Topup
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="text-3xl font-black text-white font-mono">$8.40</div>
+                                        <div className="text-3xl font-black text-white font-mono">
+                                            ${(realBalances?.luckyDrawWallet || 0).toFixed(2)}
+                                        </div>
                                         <div className="space-y-1.5">
                                             <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                                <div className="h-full w-[84%] bg-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.5)]" />
+                                                <motion.div
+                                                    className="h-full bg-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.5)]"
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${Math.min(100, ((realBalances?.luckyDrawWallet || 0) / 10) * 100)}%` }}
+                                                    transition={{ duration: 1.5, ease: "easeOut" }}
+                                                />
                                             </div>
-                                            <div className="text-[9px] font-bold text-white/20 uppercase tracking-tighter">$1.60 needed for auto-ticket</div>
+                                            <div className="flex justify-between items-center">
+                                                <div className="text-[9px] font-bold text-white/20 uppercase tracking-tighter">
+                                                    {realBalances?.luckyDrawWallet >= 10
+                                                        ? "Threshold Reached - Ticket Processing"
+                                                        : `$${(10 - (realBalances?.luckyDrawWallet || 0)).toFixed(2)} needed for auto-ticket`
+                                                    }
+                                                </div>
+                                                <div className="text-[9px] font-bold text-pink-500/40 uppercase">Min 10 USDT</div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -420,6 +517,79 @@ export default function LuckyDrawPage() {
                     </div>
                 </div>
             </main>
+
+            {/* Top-up Modal */}
+            {showTopup && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="w-full max-w-md bg-white/[0.03] border border-white/10 p-8 rounded-[3rem] backdrop-blur-3xl space-y-8"
+                    >
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-xl font-black text-white uppercase italic tracking-tight">Manual Top-Up</h3>
+                            <button onClick={() => setShowTopup(false)} className="text-white/20 hover:text-white transition-colors">
+                                <ArrowLeft className="h-6 w-6" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="text-[10px] font-black text-white/20 uppercase tracking-widest text-center">Select Source Wallet</div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    { id: 'cash', label: 'Cash Vault', val: realBalances?.cash },
+                                    { id: 'game', label: 'Entry Vault', val: realBalances?.game },
+                                    { id: 'cashback', label: 'Daily Cashback', val: realBalances?.cashback },
+                                    { id: 'roiOnRoi', label: 'ROI Yield', val: realBalances?.roiOnRoi }
+                                ].map((source) => (
+                                    <button
+                                        key={source.id}
+                                        onClick={() => setTopupSource(source.id as any)}
+                                        className={cn(
+                                            "p-4 rounded-2xl border transition-all text-left space-y-1",
+                                            topupSource === source.id
+                                                ? "bg-pink-500/20 border-pink-500/50"
+                                                : "bg-white/5 border-white/10 hover:border-white/20"
+                                        )}
+                                    >
+                                        <div className="text-[8px] font-black text-white/40 uppercase">{source.label}</div>
+                                        <div className="text-sm font-black text-white">${(source.val || 0).toFixed(2)}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="text-[10px] font-black text-white/20 uppercase tracking-widest text-center">Amount (USDT)</div>
+                            <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
+                                <input
+                                    type="number"
+                                    value={topupAmount}
+                                    onChange={(e) => setTopupAmount(Number(e.target.value))}
+                                    className="bg-transparent border-none outline-none text-2xl font-black text-white w-full font-mono"
+                                />
+                                <div className="text-white/40 font-black">USDT</div>
+                            </div>
+                        </div>
+
+                        <Button
+                            onClick={async () => {
+                                setIsToppingUp(true);
+                                try {
+                                    await topupLuckyWallet(topupSource, topupAmount);
+                                    setShowTopup(false);
+                                } catch (e) { } finally {
+                                    setIsToppingUp(false);
+                                }
+                            }}
+                            disabled={isToppingUp || topupAmount <= 0}
+                            className="w-full h-16 rounded-[1.5rem] bg-pink-600 hover:bg-pink-500 text-white font-black uppercase tracking-widest text-sm shadow-[0_20px_40px_rgba(236,72,153,0.3)] transition-all active:scale-95"
+                        >
+                            {isToppingUp ? "Processing..." : "Confirm Top-Up"}
+                        </Button>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 }

@@ -12,7 +12,7 @@ export default function SweepstakesTermsPage() {
                 <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
             </div>
 
-            <div className="container mx-auto px-4 py-10 relative z-10 max-w-5xl">
+            <div className="container mx-auto px-4 py-10 relative z-10 max-w-[95%]">
                 {/* Back to Home */}
                 <div className="mb-10">
                     <Link href="/">

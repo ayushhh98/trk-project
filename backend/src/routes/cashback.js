@@ -78,13 +78,12 @@ const getEarningsCap = async (boostTierMultiplier) => {
     }
 };
 
-// Referral Cashback Boost tiers
+// Referral Cashback Boost tiers (Based on qualified referral count)
 const REFERRAL_BOOST_TIERS = [
-    { minReferralVolume: 0, multiplier: 1, name: 'Standard', baseProfitCap: 4 },      // 400%
-    { minReferralVolume: 100, multiplier: 1.5, name: 'Boost 1.5X', baseProfitCap: 5 }, // 500%
-    { minReferralVolume: 500, multiplier: 2, name: 'Double', baseProfitCap: 6 },       // 600%
-    { minReferralVolume: 2000, multiplier: 3, name: 'Triple', baseProfitCap: 7 },      // 700%
-    { minReferralVolume: 10000, multiplier: 4, name: 'Quadruple', baseProfitCap: 8 },  // 800%
+    { minReferrals: 0, multiplier: 1, name: 'Tier 1X', baseProfitCap: 4 },       // 0 Referrals: 1X (400%)
+    { minReferrals: 5, multiplier: 2, name: 'Tier 2X', baseProfitCap: 6 },       // 5 Referrals: 2X (600%)
+    { minReferrals: 10, multiplier: 4, name: 'Tier 4X', baseProfitCap: 8 },      // 10 Referrals: 4X (800%)
+    { minReferrals: 20, multiplier: 8, name: 'Tier 8X', baseProfitCap: 10 },     // 20 Referrals: 8X (1000%)
 ];
 
 // Get current phase based on user count
@@ -105,10 +104,10 @@ const getCurrentPhase = async () => {
 };
 
 // Get referral boost tier for a user
-const getReferralBoostTier = (referralVolume) => {
+const getReferralBoostTier = (referralCount) => {
     let tier = REFERRAL_BOOST_TIERS[0];
     for (const t of REFERRAL_BOOST_TIERS) {
-        if (referralVolume >= t.minReferralVolume) {
+        if (referralCount >= t.minReferrals) {
             tier = t;
         }
     }
@@ -164,15 +163,21 @@ router.get('/status', auth, async (req, res) => {
         const user = await User.findById(req.user.id);
         const currentPhase = await getCurrentPhase();
 
-        // Calculate real referral volume
-        // Aggregate total deposits from all direct referrals
+        // Calculate REAL referral count (Referrals with >= 100 USDT total volume)
         const referrals = await User.find({ _id: { $in: user.referrals } });
-        const referralVolume = referrals.reduce((sum, ref) => {
-            const userTotalDeposits = ref.deposits?.reduce((dSum, d) => dSum + d.amount, 0) || 0;
-            return sum + userTotalDeposits;
-        }, 0);
 
-        const boostTier = getReferralBoostTier(referralVolume);
+        let qualifiedReferralCount = 0;
+        let totalReferralVolume = 0;
+
+        for (const ref of referrals) {
+            const userTotalDeposits = ref.deposits?.reduce((dSum, d) => dSum + d.amount, 0) || 0;
+            totalReferralVolume += userTotalDeposits;
+            if (userTotalDeposits >= 100) {
+                qualifiedReferralCount++;
+            }
+        }
+
+        const boostTier = getReferralBoostTier(qualifiedReferralCount);
 
         // Check activation status
         const totalLosses = user.cashbackStats?.totalNetLoss || 0;
@@ -224,10 +229,10 @@ router.get('/status', auth, async (req, res) => {
                     name: boostTier.name,
                     multiplier: boostTier.multiplier,
                     baseProfitCap: boostTier.baseProfitCap,
-                    referralVolume,
-                    nextTier: REFERRAL_BOOST_TIERS.find(t => t.minReferralVolume > referralVolume) || null
+                    referralCount: qualifiedReferralCount,
+                    totalVolume: totalReferralVolume,
+                    nextTier: REFERRAL_BOOST_TIERS.find(t => t.minReferrals > qualifiedReferralCount) || null
                 },
-
                 // Sustainability Cycle - Earnings Cap
                 sustainabilityCycle: {
                     hasReachedCap: earningsCapStatus.hasReachedCap,
@@ -279,8 +284,8 @@ router.get('/status', auth, async (req, res) => {
                 // Boost tiers info
                 boostTiers: REFERRAL_BOOST_TIERS.map(tier => ({
                     ...tier,
-                    minVolume: tier.minReferralVolume,
-                    isActive: referralVolume >= tier.minReferralVolume
+                    minCount: tier.minReferrals,
+                    isActive: qualifiedReferralCount >= tier.minReferrals
                 })),
 
                 // System advantages
@@ -310,13 +315,15 @@ router.post('/claim', auth, async (req, res) => {
         const user = await User.findById(req.user.id);
         const currentPhase = await getCurrentPhase();
 
+        // Calculate REAL referral count
         const referrals = await User.find({ _id: { $in: user.referrals } });
-        const referralVolume = referrals.reduce((sum, ref) => {
+        let qualifiedReferralCount = 0;
+        for (const ref of referrals) {
             const userTotalDeposits = ref.deposits?.reduce((dSum, d) => dSum + d.amount, 0) || 0;
-            return sum + userTotalDeposits;
-        }, 0);
+            if (userTotalDeposits >= 100) qualifiedReferralCount++;
+        }
 
-        const boostTier = getReferralBoostTier(referralVolume);
+        const boostTier = getReferralBoostTier(qualifiedReferralCount);
         const earningsCapStatus = await checkEarningsCap(user, boostTier);
 
         const claimable = computeClaimableCashback(user, boostTier, currentPhase, earningsCapStatus);
@@ -403,11 +410,18 @@ router.post('/process-daily', async (req, res) => {
         let totalDistributed = 0;
 
         for (const user of eligibleUsers) {
-            const referralVolume = (user.referrals?.length || 0) * 150;
-            const boostTier = getReferralBoostTier(referralVolume);
+            // Need to fetch referrals for accurate boost
+            const referrals = await User.find({ _id: { $in: user.referrals } });
+            let qualifiedReferralCount = 0;
+            for (const ref of referrals) {
+                const dep = ref.deposits?.reduce((s, d) => s + d.amount, 0) || 0;
+                if (dep >= 100) qualifiedReferralCount++;
+            }
+
+            const boostTier = getReferralBoostTier(qualifiedReferralCount);
 
             const remainingLoss = user.cashbackStats.totalNetLoss - user.cashbackStats.totalRecovered;
-            const maxRecoveryCap = user.cashbackStats.totalNetLoss * boostTier.profitCap;
+            const maxRecoveryCap = user.cashbackStats.totalNetLoss * boostTier.baseProfitCap; // Fixed prop name
             const maxRecoverable = maxRecoveryCap - user.cashbackStats.totalRecovered;
 
             if (maxRecoverable <= 0) continue;

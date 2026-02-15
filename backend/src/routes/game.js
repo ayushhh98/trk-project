@@ -139,9 +139,21 @@ router.post('/bet', auth, async (req, res) => {
         } else {
             user.realBalances.game -= betAmount;
             if (isWin) {
-                user.realBalances.game += payout;
+                // Winners 8X Split: 2X to Winners Wallet, 6X to Game Wallet
+                const directPayout = betAmount * 2;
+                const compoundPayout = betAmount * 6;
+
+                user.realBalances.winners += directPayout;
+                user.realBalances.game += compoundPayout;
+
+                // Track total rewards won
+                user.totalRewardsWon += payout;
             } else {
                 user.cashbackStats.totalNetLoss += betAmount;
+
+                // Real-time 1% Lucky Draw funding (20% of the 5% cashback quota)
+                const luckyFunding = betAmount * 0.01;
+                user.realBalances.luckyDrawWallet = (user.realBalances.luckyDrawWallet || 0) + luckyFunding;
             }
         }
 
@@ -150,6 +162,17 @@ router.post('/bet', auth, async (req, res) => {
         if (isWin) {
             user.gamesWon += 1;
             user.totalWinnings += (payout - betAmount);
+        }
+
+        // Auto-Entry Lucky Draw Check
+        if (gameType === 'real' && user.settings?.autoLuckyDraw && user.realBalances.luckyDrawWallet >= 10) {
+            try {
+                const JackpotService = require('../services/jackpotService');
+                const jackpotService = new JackpotService(req.app.get('io'));
+                await jackpotService.purchaseTickets(user._id, 1);
+            } catch (luckyError) {
+                console.warn("Auto-Lucky Draw failed:", luckyError.message);
+            }
         }
 
         await user.save();
@@ -186,7 +209,15 @@ router.post('/bet', auth, async (req, res) => {
                 gameVariant,
                 newBalance: gameType === 'practice' ? user.practiceBalance : user.realBalances.game
             });
+
             if (gameType === 'real' && isWin) {
+                // Notify of winners wallet update
+                io.to(user._id.toString()).emit('balance_update', {
+                    type: 'win',
+                    amount: betAmount * 2, // 2X payout to winners wallet
+                    newBalance: user.realBalances.winners
+                });
+
                 io.emit('global_win', {
                     player: user.walletAddress.slice(0, 6) + '...' + user.walletAddress.slice(-4),
                     amount: payout,

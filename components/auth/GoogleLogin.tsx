@@ -25,10 +25,10 @@ export const GoogleLogin = ({ onAuthSuccess }: { onAuthSuccess?: () => void }) =
                 }
 
                 if (!initializedRef.current) {
-                window.google.accounts.id.initialize({
-                    client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
-                    callback: handleGoogleLogin,
-                });
+                    window.google.accounts.id.initialize({
+                        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+                        callback: handleGoogleLogin,
+                    });
                     initializedRef.current = true;
                 }
 

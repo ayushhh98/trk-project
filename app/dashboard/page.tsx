@@ -4,7 +4,7 @@ import { useWallet } from "@/components/providers/WalletProvider";
 import { Button } from "@/components/ui/Button";
 import { CountdownTimer } from "@/components/dashboard/CountdownTimer";
 import { CyberneticTerminal } from "@/components/dashboard/CyberneticTerminal";
-import { Trophy, Coins, Users, TrendingUp, Zap, ShieldCheck, Wallet, Play } from "lucide-react";
+import { Trophy, Coins, Users, TrendingUp, Zap, ShieldCheck, Wallet, Play, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,7 +20,6 @@ import { PromoPoster } from "@/components/dashboard/PromoPoster";
 import { LaunchPoster } from "@/components/dashboard/LaunchPoster";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { IncomeModuleCard } from "@/components/dashboard/IncomeModuleCard";
-import { QuickActions } from "@/components/dashboard/QuickActions";
 import { RefreshCw } from "lucide-react";
 import { LiveWinnerFeed } from "@/components/jackpot/LiveWinnerFeed";
 import { PromoCarousel } from "@/components/dashboard/PromoCarousel";
@@ -156,12 +155,6 @@ export default function DashboardPage() {
                                         Real
                                     </button>
                                 </div>
-
-                                <QuickActions
-                                    onDeposit={() => setIsDepositOpen(true)}
-                                    onWithdraw={() => setIsWithdrawOpen(true)}
-                                    isRealMode={isRealMode}
-                                />
                             </div>
                         </div>
 
@@ -223,6 +216,34 @@ export default function DashboardPage() {
                             <Wallet className="h-4 w-4 mr-2" />
                             Make Deposit
                         </Button>
+                    </motion.div>
+                )}
+
+                {/* Low USDT Balance Banner (Sequential to the screenshot provided) */}
+                {hasRealAccess && (realBalances.grandTotal || 0) < 5 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="rounded-2xl overflow-hidden bg-red-500/10 border border-red-500/20 p-4 flex items-center justify-between gap-4 mb-6"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+                                <AlertTriangle className="h-5 w-5 text-red-500" />
+                            </div>
+                            <div>
+                                <div className="text-sm font-black text-red-500">Low Ecosystem Balance</div>
+                                <p className="text-xs text-white/50">Total Assets: {(realBalances.grandTotal || 0).toFixed(2)} USDT. Minimum 5 USDT recommended for play.</p>
+                            </div>
+                        </div>
+                        <Link
+                            href="https://pancakeswap.finance/swap?outputCurrency=0x55d398326f99059fF775485246999027B3197955&chain=bsc"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            <Button className="bg-red-600 text-white hover:bg-red-700 font-black uppercase text-xs px-6 h-10 rounded-xl whitespace-nowrap">
+                                GET USDT
+                            </Button>
+                        </Link>
                     </motion.div>
                 )}
 
@@ -342,42 +363,97 @@ export default function DashboardPage() {
                     <PerformanceMetrics />
                 </motion.div>
 
-                {/* Row 4: Income Modules */}
+                {/* Row 4: Active Income Modules */}
                 <motion.div
                     initial={{ opacity: 0, y: 50 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.6, duration: 0.6, type: "spring" }}
                 >
-                    <h2 className="text-2xl font-bold text-white mb-6">Income Streams</h2>
-                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="flex items-center gap-2 mb-6">
+                        <div className="h-8 w-1 bg-amber-500 rounded-full" />
+                        <h2 className="text-2xl font-display font-black text-white tracking-widest uppercase">
+                            Active Income
+                        </h2>
+                    </div>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <IncomeModuleCard
-                            title="Winners Income"
-                            description="Win 2X instantly. 6X auto-reinvested for ecosystem growth."
+                            title="Winners 8X Income"
+                            description="Win the game and receive: 2X Direct Payout + 6X Auto Compound."
                             icon={Trophy}
                             moduleId="Module_01"
                             multiplier="8.0x"
                             href="/dashboard/income"
                             color="orange"
+                            isLocked={false}
                         />
                         <IncomeModuleCard
-                            title="Referral Levels"
-                            description="Build your network. Earn from 10 dynamic levels."
+                            title="Direct Level Income"
+                            description="Earn commissions from team deposits across 15 dynamic levels."
                             icon={Users}
                             moduleId="Module_02"
-                            stat={{ label: "Network Depth", value: "L1-L10" }}
+                            stat={{ label: "Levels", value: "1-15" }}
                             href="/dashboard/referral"
                             color="emerald"
+                            isLocked={!user?.activation?.canWithdrawDirectLevel}
+                        />
+                        <IncomeModuleCard
+                            title="Winner Level Income"
+                            description="Earn 15% leveraged commission when your team wins games."
+                            icon={Zap}
+                            moduleId="Module_03"
+                            stat={{ label: "Leverage", value: "15%" }}
+                            href="/dashboard/referral"
+                            color="blue"
+                            isLocked={!user?.activation?.canWithdrawWinners}
+                        />
+                    </div>
+                </motion.div>
+
+                {/* Row 5: Passive & Protection Income Modules */}
+                <motion.div
+                    initial={{ opacity: 0, y: 50 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.7, duration: 0.6, type: "spring" }}
+                    className="mt-12"
+                >
+                    <div className="flex items-center gap-2 mb-6">
+                        <div className="h-8 w-1 bg-indigo-500 rounded-full" />
+                        <h2 className="text-2xl font-display font-black text-white tracking-widest uppercase">
+                            Passive & Protection
+                        </h2>
+                    </div>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <IncomeModuleCard
+                            title="Cashback Protection"
+                            description="Daily auto-recovery of net losses. Capital protection up to 800%."
+                            icon={ShieldCheck}
+                            moduleId="Module_04"
+                            stat={{ label: "Recovery", value: "Daily" }}
+                            href="/dashboard/cashback"
+                            color="indigo"
+                            isLocked={!user?.activation?.cashbackActive}
+                        />
+                        <IncomeModuleCard
+                            title="ROI on ROI"
+                            description="Earn from your team's cashback. Passive daily compound income."
+                            icon={TrendingUp}
+                            moduleId="Module_05"
+                            stat={{ label: "Depth", value: "15 Levels" }}
+                            href="/dashboard/roi-on-roi"
+                            color="cyan"
+                            isLocked={!user?.activation?.allStreamsUnlocked}
+                        />
+                        <IncomeModuleCard
+                            title="Club Income"
+                            description="Leadership rewards. Earn a share of platform's daily turnover."
+                            icon={Trophy}
+                            moduleId="Module_06"
+                            stat={{ label: "Pool", value: "8% Share" }}
+                            href="/dashboard/club"
+                            color="purple"
+                            isLocked={!user?.activation?.allStreamsUnlocked}
                         />
                         <LuckyDraw />
-                        <IncomeModuleCard
-                            title="Cashback Cycle"
-                            description="Sustainable safety net. 100% sustainability for every roll."
-                            icon={Zap}
-                            moduleId="Module_04"
-                            stat={{ label: "Protocol", value: "Auto-Return" }}
-                            href="/dashboard/cashback"
-                            color="cyan"
-                        />
                     </div>
                 </motion.div>
             </main>

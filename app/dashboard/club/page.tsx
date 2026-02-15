@@ -1,6 +1,7 @@
 "use client";
 
 import { useWallet } from "@/components/providers/WalletProvider";
+import { socket } from "@/components/providers/Web3Provider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
@@ -47,27 +48,19 @@ export default function ClubIncPage() {
         nextRank: ClubRankProgress | null;
     };
 
-    // Mock Club Data
-    const defaultClubData: ClubData = {
-        currentRank: { id: 'Rank 1', name: 'Bronze Director' },
-        totalTurnover: 1250000,
+    // Initial State with minimal defaults
+    const [clubData, setClubData] = useState<ClubData>({
+        currentRank: { id: 'None', name: 'None' },
+        totalTurnover: 0,
         poolPercentage: '8%',
-        dailyPoolAmount: 100000,
-        earningsToday: 156.40,
-        totalEarned: 2450.80,
-        strongLegVolume: 12500,
-        otherLegsVolume: 8400,
-        totalTeamVolume: 20900,
-        nextRank: {
-            id: 'Rank 2',
-            name: 'Silver Director',
-            target: 50000,
-            strongLegReq: 25000,
-            otherLegsReq: 25000
-        }
-    };
-
-    const [clubData, setClubData] = useState<ClubData>(defaultClubData);
+        dailyPoolAmount: 0,
+        earningsToday: 0,
+        totalEarned: 0,
+        strongLegVolume: 0,
+        otherLegsVolume: 0,
+        totalTeamVolume: 0,
+        nextRank: null
+    });
     const [rankStructure, setRankStructure] = useState(DEFAULT_RANK_STRUCTURE);
 
     const rankMetaById = useMemo(() => {
@@ -119,13 +112,14 @@ export default function ClubIncPage() {
                 const otherLegsVolume = status?.qualification?.otherLegsVolume ?? 0;
                 const totalTeamVolume = status?.nextRank?.current ?? (strongLegVolume + otherLegsVolume);
 
-                setClubData({
+                setClubData(prev => ({
+                    ...prev,
                     currentRank: { id: currentRankId, name: currentRankName },
-                    totalTurnover: status?.dailyPool?.totalTurnover ?? defaultClubData.totalTurnover,
-                    poolPercentage: status?.dailyPool?.poolPercentage ?? defaultClubData.poolPercentage,
-                    dailyPoolAmount: status?.dailyPool?.totalPoolAmount ?? defaultClubData.dailyPoolAmount,
+                    totalTurnover: status?.dailyPool?.totalTurnover ?? 0,
+                    poolPercentage: status?.dailyPool?.poolPercentage ?? '8%',
+                    dailyPoolAmount: status?.dailyPool?.totalPoolAmount ?? 0,
                     earningsToday: status?.earnings?.today ?? 0,
-                    totalEarned: status?.earnings?.total ?? 0,
+                    totalEarned: status?.earnings?.totalReceived ?? 0,
                     strongLegVolume,
                     otherLegsVolume,
                     totalTeamVolume,
@@ -138,15 +132,30 @@ export default function ClubIncPage() {
                             otherLegsReq: status.nextRank.otherLegsReq
                         }
                         : null
-                });
+                }));
             } catch (error) {
                 console.warn("Club status fetch failed:", error);
             }
         };
 
         loadClubData();
+
+        // Socket Listener for Real-Time Turnover
+        const onTurnoverUpdate = (data: any) => {
+            setClubData(prev => ({
+                ...prev,
+                totalTurnover: data.dailyTurnover,
+                dailyPoolAmount: data.dailyTurnover * 0.08
+            }));
+        };
+
+        if (socket) {
+            socket.on('platform:turnover_update', onTurnoverUpdate);
+        }
+
         return () => {
             isActive = false;
+            if (socket) socket.off('platform:turnover_update', onTurnoverUpdate);
         };
     }, [user?.clubRank]);
 

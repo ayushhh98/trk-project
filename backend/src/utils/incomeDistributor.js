@@ -29,6 +29,7 @@ const ensureRealBalances = (user) => {
             winners: 0,
             roiOnRoi: 0,
             club: 0,
+            teamWinners: 0,
             walletBalance: 0,
             luckyDrawWallet: 0
         };
@@ -36,6 +37,7 @@ const ensureRealBalances = (user) => {
     }
     if (typeof user.realBalances.directLevel !== 'number') user.realBalances.directLevel = 0;
     if (typeof user.realBalances.winners !== 'number') user.realBalances.winners = 0;
+    if (typeof user.realBalances.teamWinners !== 'number') user.realBalances.teamWinners = 0;
 };
 
 const distributeDepositCommissions = async (userId, depositAmount) => {
@@ -47,7 +49,8 @@ const distributeDepositCommissions = async (userId, depositAmount) => {
             const upline = await User.findById(currentUser.referredBy);
             if (!upline) break;
 
-            if (upline.activation?.tier !== 'none') {
+            // STRICT ACTIVATION CHECK: Must be at least Tier 1 to earn commissions
+            if (upline.activation && (upline.activation.tier === 'tier1' || upline.activation.tier === 'tier2')) {
                 const unlockedLevels = getUnlockedLevels(upline.referrals?.length || 0);
                 if (currentLevel <= unlockedLevels) {
                     const rate = DIRECT_LEVEL_RATES[currentLevel] || 0;
@@ -56,6 +59,17 @@ const distributeDepositCommissions = async (userId, depositAmount) => {
                     upline.rewardPoints += commission;
                     upline.realBalances.directLevel += commission;
                     await upline.save();
+
+                    // Notify User of balance change
+                    const io = require('../server').io;
+                    if (io) {
+                        io.to(upline._id.toString()).emit('balance_update', {
+                            type: 'commission',
+                            commissionType: 'deposit',
+                            amount: commission,
+                            newBalance: upline.realBalances.directLevel
+                        });
+                    }
 
                     // Log commission
                     try {
@@ -89,15 +103,27 @@ const distributeWinnerCommissions = async (winnerId, winAmount) => {
             const upline = await User.findById(currentUser.referredBy);
             if (!upline) break;
 
-            if (upline.activation?.tier !== 'none') {
+            // STRICT ACTIVATION CHECK: Must be at least Tier 1 to earn winner commissions
+            if (upline.activation && (upline.activation.tier === 'tier1' || upline.activation.tier === 'tier2')) {
                 const unlockedLevels = getUnlockedLevels(upline.referrals?.length || 0);
                 if (currentLevel <= unlockedLevels) {
                     const rate = WINNER_LEVEL_RATES[currentLevel] || 0;
                     const commission = winAmount * rate;
                     ensureRealBalances(upline);
                     upline.rewardPoints += commission;
-                    upline.realBalances.winners += commission;
+                    upline.realBalances.teamWinners += commission;
                     await upline.save();
+
+                    // Notify User of balance change
+                    const io = require('../server').io;
+                    if (io) {
+                        io.to(upline._id.toString()).emit('balance_update', {
+                            type: 'commission',
+                            commissionType: 'winner',
+                            amount: commission,
+                            newBalance: upline.realBalances.teamWinners
+                        });
+                    }
 
                     // Log commission
                     try {

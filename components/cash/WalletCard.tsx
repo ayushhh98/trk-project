@@ -24,7 +24,7 @@ export function WalletCard({ type, balance, onWithdraw, onDeposit, labelOverride
             glow: "bg-emerald-500/20",
             border: "border-emerald-500/30",
             icon: Wallet,
-            tag: "Redeemable"
+            tag: "Available"
         },
         game: {
             label: "Active_Capital",
@@ -105,9 +105,9 @@ export function WalletCard({ type, balance, onWithdraw, onDeposit, labelOverride
                                     : balance
                                 )}
                             </span>
-                            {!balance.toString().includes('USDT') && !balance.toString().includes('BNB') && !balance.toString().includes('SC') && !balance.toString().includes('GC') && (
+                            {!balance.toString().includes('USDT') && !balance.toString().includes('BNB') && (
                                 <span className="text-xs font-bold text-white/30 uppercase tracking-widest">
-                                    {type === 'cash' || type === 'external' ? 'USDT' : 'SC'}
+                                    USDT
                                 </span>
                             )}
                         </motion.div>
@@ -138,8 +138,9 @@ export function WalletCard({ type, balance, onWithdraw, onDeposit, labelOverride
                                 variant="outline"
                                 className="flex-1 h-10 border-white/10 bg-white/5 hover:bg-white/10 text-white font-black text-[10px] tracking-widest uppercase rounded-none transition-transform active:scale-95 disabled:opacity-30"
                             >
-                                Redeem
-                                <ArrowUpRight className="ml-2 h-3 w-3 opacity-50" />
+                                <span className="flex items-center gap-1">
+                                    Withdraw <ArrowUpRight className="h-3 w-3 opacity-50" />
+                                </span>
                             </Button>
                         )}
                     </div>

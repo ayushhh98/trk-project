@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const User = require('../models/User');
 const { ethers } = require('ethers');
+const { calculateUserRank, processDailyClubIncome } = require('../utils/clubIncomeUtils');
 // const TRKGameABI = require('../contracts/TRKGameABI.json'); // Ensure this exists or use artifact
 // NOTE: In a real deployment, you'd import the Contract Service to interact with the blockchain.
 // For now, we will simulate the logic and update the Database state.
@@ -13,128 +14,119 @@ const TICKET_PRICE = 10; // USDT
 const startCronJobs = (io) => {
     console.log("⏰ Starting Server-Side Cron Jobs...");
 
-    // 1. DAILY CASHBACK & LUCKY DRAW AUTO-ENTRY (Runs at 00:00 UTC every day)
+    // 1. DAILY CASHBACK, ROI ON ROI & 30-DAY CLEANUP (Runs at 00:00 UTC every day)
     cron.schedule('0 0 * * *', async () => {
-        console.log("🔄 Running Daily Cashback & Lucky Draw Routine...");
+        console.log("🔄 Running Daily Maintenance Routine...");
         try {
+            // A. CLEANUP: Delete practice accounts older than 30 days without activation
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            const deleted = await User.deleteMany({
+                'activation.tier': 'none',
+                'activation.registrationTime': { $lt: thirtyDaysAgo }
+            });
+            if (deleted.deletedCount > 0) {
+                console.log(`🧹 Deleted ${deleted.deletedCount} inactive practice accounts.`);
+            }
+
+            // B. CASHBACK: Phase-based and Capping-based distribution
+            const activeUsersCount = await User.countDocuments({ isActive: true });
+            let cashbackRate = 0.005; // Phase 1: 0.5%
+            if (activeUsersCount > 100000) cashbackRate = 0.004; // Phase 2: 0.4%
+            if (activeUsersCount > 1000000) cashbackRate = 0.0033; // Phase 3: 0.33%
+
             const users = await User.find({
                 'activation.cashbackActive': true,
-                isActive: true
+                isActive: true,
+                'cashbackStats.totalNetLoss': { $gt: 0 }
             });
 
-            console.log(`Found ${users.length} eligible users for cashback.`);
-
             for (const user of users) {
-                // LOGIC: Calculate Net Loss for Yesterday
-                // In a real system, you'd query a Transaction/Bet model filtering by timestamp.
-                // Here we assume 'cashbackStats.todayCashback' is populated by live betting events.
+                // Tier Benefits for Capping
+                // Tier 1: 100% cap (0 refs)
+                // Tier 2: 200% cap (5 refs)
+                // Tier 3: 400% cap (10 refs)
+                // Tier 4: 800% cap (20 refs)
+                const refsCount = user.referrals?.length || 0;
+                let capMultiplier = 1;
+                if (refsCount >= 20) capMultiplier = 8;
+                else if (refsCount >= 10) capMultiplier = 4;
+                else if (refsCount >= 5) capMultiplier = 2;
 
-                // For this MVP, we are assuming 'cashbackStats.pendingCashback' tracks the loss amount eligible for cashback
-                // In a full implementation, we'd reset 'today' stats here.
+                const maxRecovery = user.activation.totalDeposited * capMultiplier;
 
-                // 1. Distribute Cashback
-                // We use a simplified calculation based on TOTAL Deposit for now as per "0.5% of Capital" requirement if losses exist?
-                // The requirement said "0.5% Daily" based on USER BASE, usually on DEPOSIT or LOSS?
-                // Re-reading: "0.5% Daily" usually implies ROI on Capital OR Cashback on Loss.
-                // The text says "Losers Profit - Cashback Protection... If luck isn't on your side... recover losses daily".
-                // This implies it is based on LOSS AMOUNT.
-                // Let's assume 'totalNetLoss' is the basis.
+                if (user.cashbackStats.totalRecovered >= maxRecovery) {
+                    // Capping reached - Earnings paused until re-deposit
+                    console.log(`User ${user.walletAddress}: Cashback Cap Reached (${maxRecovery} USDT)`);
+                    continue;
+                }
 
-                if (user.cashbackStats.totalNetLoss > 0) {
-                    const dailyCashback = user.cashbackStats.totalNetLoss * DAILY_CASHBACK_PERCENT;
+                // Calculate daily recovery
+                let dailyCashback = user.cashbackStats.totalNetLoss * cashbackRate;
 
-                    // Cap check (Max 200% etc) - Skipped for MVP brevity
+                // Ensure we don't exceed max recovery or remaining net loss
+                const remainingToCap = maxRecovery - user.cashbackStats.totalRecovered;
+                const remainingLoss = user.cashbackStats.totalNetLoss - user.cashbackStats.totalRecovered;
 
-                    user.realBalances.cashback += dailyCashback;
-                    user.cashbackStats.todayCashback = dailyCashback; // For ROI on ROI
+                dailyCashback = Math.min(dailyCashback, remainingToCap, remainingLoss);
 
-                    console.log(`User ${user.walletAddress}: Cashback +${dailyCashback}`);
+                if (dailyCashback > 0) {
+                    // Update stats
+                    user.cashbackStats.totalRecovered += dailyCashback;
+                    user.cashbackStats.todayCashback = dailyCashback; // Basis for ROI on ROI
 
-                    // 2. Auto-Buy Lucky Draw Ticket
-                    if (user.settings.autoLuckyDraw) {
-                        const deduction = dailyCashback * LUCKY_DRAW_AUTO_PERCENT;
-                        user.realBalances.cashback -= deduction;
-                        user.realBalances.luckyDrawWallet += deduction;
+                    // 20% Auto-fund Lucky Draw from Daily Cashback
+                    const luckyDrawFunding = dailyCashback * LUCKY_DRAW_AUTO_PERCENT;
+                    const netCashback = dailyCashback - luckyDrawFunding;
 
-                        // Check if wallet has enough for a ticket
-                        if (user.realBalances.luckyDrawWallet >= TICKET_PRICE) {
-                            const tickets = Math.floor(user.realBalances.luckyDrawWallet / TICKET_PRICE);
-                            const cost = tickets * TICKET_PRICE;
-
-                            user.realBalances.luckyDrawWallet -= cost;
-                            // In real on-chain, we'd call the contract here.
-                            // contract.buyTickets(tickets)
-                            console.log(`User ${user.walletAddress}: Auto-bought ${tickets} tickets.`);
-                        }
-                    }
+                    user.realBalances.cashback += netCashback;
+                    user.realBalances.luckyDrawWallet += luckyDrawFunding;
 
                     await user.save();
-
-                    // Notify User via Socket
-                    if (io) {
-                        io.to(user.walletAddress).emit('notification', {
-                            type: 'cashback',
-                            message: `Daily Cashback of ${dailyCashback.toFixed(2)} USDT Received!`
-                        });
-                    }
                 }
             }
+
+            // C. ROI ON ROI: Distribute commissions based on today's cashback
+            console.log("📈 Distributing ROI on ROI commissions...");
+            const { processDailyRoi } = require('../utils/roiOnRoiUtils');
+            await processDailyRoi(io);
+
         } catch (error) {
-            console.error("Critical Cron Error:", error);
+            console.error("Critical Maintenance Cron Error:", error);
         }
     });
 
-    // 2. CLUB RANK UPDATE (Runs at 00:30 UTC every day)
+    // 2. CLUB RANK UPDATE & INCOME DISTRIBUTION (Runs at 00:30 UTC every day)
     cron.schedule('30 0 * * *', async () => {
-        console.log("🏆 Updating Club Ranks...");
+        console.log("🏆 Updating Club Ranks and Distributing Income...");
         try {
             const users = await User.find({ isActive: true });
 
             for (const user of users) {
-                // In a real system, 'teamStats' would be aggregated from a separate 'Transaction' or 'Volume' collection daily.
-                // Here we assume 'teamStats.totalTeamVolume' is up to date from the live deposit hooks.
-
-                const strongLeg = user.teamStats.strongLegVolume;
-                const otherLegs = user.teamStats.otherLegsVolume;
-                const totalVolume = strongLeg + otherLegs; // Should match totalTeamVolume key
-
-                // 50% Rule Check
-                // Requirement: 50% max from strong leg, 50% from others.
-                // Effective Volume = Min(StrongLeg, OtherLegs) * 2
-                // Example: Strong 600, Others 400. Effective = 400 * 2 = 800.
-                // The 'excess' 200 from strong leg doesn't count towards rank.
-
-                let effectiveVolume = 0;
-                if (strongLeg > otherLegs) {
-                    effectiveVolume = otherLegs * 2;
-                } else {
-                    effectiveVolume = totalVolume; // If strong leg is < 50%, then all volume counts (technically 50/50 is ideal)
-                }
-
-                // Determine Rank
-                let newRank = 'None';
-                if (effectiveVolume >= 10000000) newRank = 'Rank 6';
-                else if (effectiveVolume >= 5000000) newRank = 'Rank 5';
-                else if (effectiveVolume >= 1000000) newRank = 'Rank 4';
-                else if (effectiveVolume >= 250000) newRank = 'Rank 3';
-                else if (effectiveVolume >= 50000) newRank = 'Rank 2';
-                else if (effectiveVolume >= 10000) newRank = 'Rank 1';
+                const newRank = calculateUserRank(user);
 
                 if (newRank !== user.clubRank) {
+                    const oldRank = user.clubRank;
                     user.clubRank = newRank;
                     await user.save();
-                    console.log(`User ${user.walletAddress} promoted to ${newRank}`);
+                    console.log(`User ${user.walletAddress} promoted from ${oldRank} to ${newRank}`);
 
                     if (io) {
-                        io.to(user.walletAddress).emit('notification', {
+                        io.to(user._id.toString()).emit('balance_update', {
                             type: 'rank_up',
-                            message: `Congratulations! You've reached ${newRank}!`
+                            message: `Congratulations! You've reached ${newRank}!`,
+                            newRank: newRank
                         });
                     }
                 }
             }
+
+            // After ranks are updated, distribute the turnover pool
+            await processDailyClubIncome(io);
+
         } catch (error) {
-            console.error("Club Rank Cron Error:", error);
+            console.error("Club Income Cron Error:", error);
         }
     });
 
@@ -152,29 +144,14 @@ const startCronJobs = (io) => {
                 const ticketsToBuy = Math.floor(walletBalance / TICKET_PRICE);
 
                 if (ticketsToBuy > 0) {
-                    const cost = ticketsToBuy * TICKET_PRICE;
+                    try {
+                        const JackpotService = require('./jackpotService');
+                        const jackpotService = new JackpotService(io);
+                        await jackpotService.purchaseTickets(user._id, ticketsToBuy);
 
-                    // Deduct from wallet
-                    // SWEEPSTAKES: Weekly draw logic adapted
-                    // Previously deducted from 'luckyDrawWallet'. 
-                    // Now, we could give FREE tickets to active members or deduct from Free Credits?
-                    // For now, let's disable automated deductions to start clean.
-                    /* 
-                    user.realBalances.luckyDrawWallet -= cost;
-                    user.realBalances.lucky += cost;
-                    */
-
-                    // In a real system, we would interact with the Smart Contract here:
-                    // await contract.buyTickets(ticketsToBuy, { value: cost });
-
-                    await user.save();
-                    console.log(`User ${user.walletAddress}: Auto-bought ${ticketsToBuy} tickets (Cost: ${cost})`);
-
-                    if (io) {
-                        io.to(user.walletAddress).emit('notification', {
-                            type: 'lucky_draw',
-                            message: `Auto-bought ${ticketsToBuy} Lucky Draw Tickets!`
-                        });
+                        console.log(`User ${user.walletAddress}: Auto-bought ${ticketsToBuy} tickets via cron`);
+                    } catch (error) {
+                        console.error(`Lucky Draw Auto-Entry failed for ${user.walletAddress}:`, error.message);
                     }
                 }
             }

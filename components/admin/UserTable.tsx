@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Search, MoreVertical, Shield, Ban, CheckCircle, ChevronLeft, ChevronRight, Wallet, Users, Zap, TrendingUp, Activity, Download } from "lucide-react";
 import { adminAPI } from "@/lib/api";
+import { useSocket } from "@/components/providers/Web3Provider";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -44,6 +45,8 @@ export function UserTable() {
     const [totalPages, setTotalPages] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
 
+    const socket = useSocket();
+
     const fetchUsers = async () => {
         setIsLoading(true);
         try {
@@ -63,6 +66,51 @@ export function UserTable() {
         const debounce = setTimeout(fetchUsers, 500);
         return () => clearTimeout(debounce);
     }, [search, page]);
+
+    // Real-time Updates
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleUserRegistered = (newUser: any) => {
+            // Only update if we are on the first page and not searching
+            if (page === 1 && !search) {
+                setUsers(prev => {
+                    const exists = prev.find(u => u._id === newUser._id);
+                    if (exists) return prev;
+                    return [newUser, ...prev].slice(0, 10);
+                });
+                toast.info("New User Registered", {
+                    description: `${newUser.email || "User"} joined the platform.`
+                });
+            } else {
+                // Just show notification if deep in pages
+                toast.info("New User Registered", {
+                    description: `${newUser.email || "User"} joined the platform.`
+                });
+            }
+        };
+
+        const handleBalanceUpdate = (data: any) => {
+            setUsers(prev => prev.map(user => {
+                if (user._id === data.userId || user.walletAddress === data.walletAddress) {
+                    return {
+                        ...user,
+                        realBalances: data.realBalances ? { ...user.realBalances, ...data.realBalances } : user.realBalances,
+                        credits: data.practiceBalance !== undefined ? data.practiceBalance : user.credits
+                    };
+                }
+                return user;
+            }));
+        };
+
+        socket.on("user_registered", handleUserRegistered);
+        socket.on("balance_update", handleBalanceUpdate);
+
+        return () => {
+            socket.off("user_registered", handleUserRegistered);
+            socket.off("balance_update", handleBalanceUpdate);
+        };
+    }, [socket, page, search]);
 
     const handleBan = async (id: string, currentStatus: boolean) => {
         try {

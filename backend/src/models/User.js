@@ -64,35 +64,6 @@ const userSchema = new mongoose.Schema({
         required: function () { return !!this.walletAddress; }, // Required if wallet linked
         default: () => Math.floor(Math.random() * 1000000).toString()
     },
-    // Sweepstakes Model: Virtual Currency System
-    credits: {
-        type: Number,
-        default: 0 // Game Coins (GC) - For entertainment only, NO monetary value
-    },
-    rewardPoints: {
-        type: Number,
-        default: 0 // Sweepstakes Coins (SC) - Redeemable for prizes
-    },
-    redemptionOtp: {
-        type: String,
-        select: false
-    },
-    redemptionOtpExpires: {
-        type: Date,
-        select: false
-    },
-    redemptionHistory: [{
-        pointsRedeemed: { type: Number, required: true },
-        usdtAmount: { type: Number, required: true },
-        status: { type: String, default: 'pending' }, // pending, completed, failed
-        txHash: { type: String, default: null },
-        redeemedAt: { type: Date, default: Date.now }
-    }],
-    freeCredits: {
-        daily: { type: Number, default: 100 }, // Daily bonus amount
-        lastClaimed: { type: Date, default: null },
-        totalClaimed: { type: Number, default: 0 }
-    },
     membershipLevel: {
         type: String,
         enum: ['none', 'starter', 'premium', 'vip'],
@@ -108,6 +79,7 @@ const userSchema = new mongoose.Schema({
         winners: { type: Number, default: 0 },
         roiOnRoi: { type: Number, default: 0 },
         club: { type: Number, default: 0 },
+        teamWinners: { type: Number, default: 0 },
         walletBalance: { type: Number, default: 0 },
         luckyDrawWallet: { type: Number, default: 0 }
     },
@@ -140,8 +112,6 @@ const userSchema = new mongoose.Schema({
 
     deposits: [{
         amount: { type: Number, required: true }, // Package cost
-        credits: { type: Number, required: true }, // GC received
-        rewardPoints: { type: Number, required: true }, // SC received
         txHash: { type: String },
         createdAt: { type: Date, default: Date.now }
     }],
@@ -182,7 +152,8 @@ const userSchema = new mongoose.Schema({
         canTransferPractice: { type: Boolean, default: false },
         canWithdrawAll: { type: Boolean, default: false },
         cashbackActive: { type: Boolean, default: false },
-        allStreamsUnlocked: { type: Boolean, default: false }
+        allStreamsUnlocked: { type: Boolean, default: false },
+        registrationTime: { type: Date, default: Date.now } // Fixed for guest mode dashboard
     },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
@@ -191,29 +162,29 @@ const userSchema = new mongoose.Schema({
 });
 
 // Update activation tier based on total deposits
+// Update activation tier based on total deposits
 userSchema.methods.updateActivationTier = function (tier1Threshold = 10, tier2Threshold = 100) {
     const total = this.activation.totalDeposited;
 
     if (total >= tier2Threshold) {
-        // Tier 2: Full activation
+        // Tier 2: 100+ USDT Activation
+        // Benefits: Transfer Practice, Withdraw All, Cashback Active, All Streams Unlocked
         this.activation.tier = 'tier2';
-        if (!this.activation.tier2ActivatedAt) {
-            this.activation.tier2ActivatedAt = new Date();
-        }
-        // Unlock all features
+        if (!this.activation.tier2ActivatedAt) this.activation.tier2ActivatedAt = new Date();
+        if (!this.activation.tier1ActivatedAt) this.activation.tier1ActivatedAt = new Date(); // Implicitly Tier 1 too
+
         this.activation.canWithdrawDirectLevel = true;
         this.activation.canWithdrawWinners = true;
         this.activation.canTransferPractice = true;
-        this.activation.canWithdrawAll = true;
+        this.activation.canWithdrawAll = true; // Withdraw from Game, Cash, ROI, Club, etc.
         this.activation.cashbackActive = true;
         this.activation.allStreamsUnlocked = true;
     } else if (total >= tier1Threshold) {
-        // Tier 1: Basic activation
+        // Tier 1: 10+ USDT Activation
+        // Benefits: Withdraw Direct Level & Winners Income ONLY
         this.activation.tier = 'tier1';
-        if (!this.activation.tier1ActivatedAt) {
-            this.activation.tier1ActivatedAt = new Date();
-        }
-        // Unlock Tier 1 features only
+        if (!this.activation.tier1ActivatedAt) this.activation.tier1ActivatedAt = new Date();
+
         this.activation.canWithdrawDirectLevel = true;
         this.activation.canWithdrawWinners = true;
         this.activation.canTransferPractice = false;
@@ -221,6 +192,7 @@ userSchema.methods.updateActivationTier = function (tier1Threshold = 10, tier2Th
         this.activation.cashbackActive = false;
         this.activation.allStreamsUnlocked = false;
     } else {
+        // No Tier
         this.activation.tier = 'none';
         this.activation.canWithdrawDirectLevel = false;
         this.activation.canWithdrawWinners = false;
@@ -244,6 +216,7 @@ const normalizeRealBalances = (user) => {
         winners: 0,
         roiOnRoi: 0,
         club: 0,
+        teamWinners: 0,
         walletBalance: 0,
         luckyDrawWallet: 0
     };
@@ -313,26 +286,22 @@ const pickStartDigit = (walletAddress) => {
 };
 
 const generateUniqueWalletReferralCode = async (user) => {
-    if (!user?.walletAddress) return null;
     const Model = user.constructor;
-    const startDigit = pickStartDigit(user.walletAddress);
-    const lengths = [6, 7, 8];
+    const prefix = "TRK";
 
-    for (const length of lengths) {
-        const base = buildWalletReferralBase(user.walletAddress, length);
-        for (let offset = 0; offset < 10; offset += 1) {
-            const digit = (startDigit + offset) % 10;
-            const code = `${base}${digit}`;
-            const exists = await Model.exists({ referralCode: code });
-            if (!exists) return code;
-        }
+    for (let attempt = 0; attempt < 50; attempt++) {
+        // Generate a 5-digit random number
+        const randomDigits = Math.floor(10000 + Math.random() * 90000).toString();
+        const code = `${prefix}${randomDigits}`;
+
+        const exists = await Model.exists({ referralCode: code });
+        if (!exists) return code;
     }
 
-    // Fallback: extend with two digits to guarantee uniqueness
-    const base = buildWalletReferralBase(user.walletAddress, 8);
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-        const suffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
-        const code = `${base}${suffix}`;
+    // Fallback: extend slightly if needed (unlikely to collide 50 times with 5 digits)
+    for (let attempt = 0; attempt < 10; attempt++) {
+        const randomDigits = Math.floor(100000 + Math.random() * 900000).toString();
+        const code = `${prefix}${randomDigits}`;
         const exists = await Model.exists({ referralCode: code });
         if (!exists) return code;
     }
@@ -351,14 +320,18 @@ userSchema.pre('save', async function (next) {
     }
 
     if (this.walletAddress) {
+        // If no code or legacy derived code, generate new TRK style
         const legacyCode = this.walletAddress.slice(2, 8).toUpperCase();
-        const shouldRefreshCode = !this.referralCode || this.referralCode === legacyCode;
-        if (shouldRefreshCode) {
+        const isLegacy = this.referralCode === legacyCode;
+        const isDerived = this.referralCode && !this.referralCode.startsWith('TRK');
+
+        if (!this.referralCode || isLegacy || isDerived) {
             const code = await generateUniqueWalletReferralCode(this);
             if (code) this.referralCode = code;
         }
     } else if (!this.referralCode && this.email) {
-        this.referralCode = this.email.split('@')[0].slice(0, 6).toUpperCase() + Math.floor(Math.random() * 1000).toString();
+        const code = await generateUniqueWalletReferralCode(this);
+        if (code) this.referralCode = code;
     }
 
     this.updatedAt = Date.now();

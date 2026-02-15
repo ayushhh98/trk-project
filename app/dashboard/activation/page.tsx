@@ -191,12 +191,12 @@ export default function ActivationPage() {
                         {/* Feature Grid: Locked vs Unlocked */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 pt-4">
                             {[
-                                { name: 'Direct Level', unlocked: activation.canWithdrawDirectLevel, icon: Coins, tier: 'TIER_01' },
-                                { name: 'Winners Pool', unlocked: activation.canWithdrawWinners, icon: TrendingUp, tier: 'TIER_01' },
+                                { name: 'Direct Level Income', unlocked: activation.canWithdrawDirectLevel, icon: Coins, tier: 'TIER_01' },
+                                { name: 'Winners Income', unlocked: activation.canWithdrawWinners, icon: TrendingUp, tier: 'TIER_01' },
                                 { name: 'Practice Transfer', unlocked: activation.canTransferPractice, icon: RefreshCcw, tier: 'TIER_02' },
-                                { name: 'Full Profits', unlocked: activation.canWithdrawAll, icon: ArrowUpRight, tier: 'TIER_02' },
-                                { name: 'Cashback Engine', unlocked: activation.cashbackActive, icon: Shield, tier: 'TIER_02' },
-                                { name: 'All Streams', unlocked: activation.allStreamsUnlocked, icon: Zap, tier: 'TIER_02' },
+                                { name: 'All Withdrawals', unlocked: activation.canWithdrawAll, icon: ArrowUpRight, tier: 'TIER_02' },
+                                { name: 'Cashback Protection', unlocked: activation.cashbackActive, icon: Shield, tier: 'TIER_02' },
+                                { name: 'All Income Streams', unlocked: activation.allStreamsUnlocked, icon: Zap, tier: 'TIER_02' },
                             ].map((feature, i) => (
                                 <motion.div
                                     key={i}

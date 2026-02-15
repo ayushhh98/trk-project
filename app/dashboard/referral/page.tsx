@@ -126,8 +126,8 @@ export default function ReferralPage() {
         };
     }, [stats, defaultStats]);
 
-    const referralLink = effectiveStats?.referralCode
-        ? `https://trk.game/?ref=${effectiveStats.referralCode}`
+    const referralLink = user?.referralCode
+        ? `https://trk.game/?ref=${user.referralCode}`
         : address ? `https://trk.game/?ref=${address.slice(2, 8).toUpperCase()}` : "Connect wallet to get your link";
 
     const totalReward = effectiveStats?.totals?.totalEarned || user?.rewardPoints || 0;
@@ -530,25 +530,32 @@ export default function ReferralPage() {
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                             {level.level === 1 && effectiveStats?.level1Details ? (
                                                 effectiveStats.level1Details.map((member: any, i: number) => {
-                                                    const displayName = member.name || member.email || member.address || "Unknown";
-                                                    const joined = member.joined ? new Date(member.joined).toLocaleDateString() : "Unknown";
-                                                    const lastActive = member.lastActive ? new Date(member.lastActive).toLocaleDateString() : "N/A";
+                                                    const displayName = member.name || member.email || (member.walletAddress ? `${member.walletAddress.slice(0, 6)}...${member.walletAddress.slice(-4)}` : "Unknown");
+                                                    const totalDeposited = member.totalDeposited || 0;
+                                                    const isOnline = member.isOnline;
+
                                                     return (
                                                         <div key={i} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex items-start gap-4 group/item hover:bg-white/5 transition-all">
                                                             <div className={cn(
-                                                                "h-10 w-10 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5",
-                                                                member.active ? "bg-emerald-500/20 text-emerald-500" : "bg-white/5 text-white/20"
+                                                                "h-10 w-10 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 relative",
+                                                                member.activation?.tier !== 'none' ? "bg-emerald-500/20 text-emerald-500" : "bg-white/5 text-white/20"
                                                             )}>
-                                                                {member.active ? <Zap className="h-4 w-4" /> : "OFF"}
+                                                                {member.activation?.tier !== 'none' ? <CheckCheck className="h-4 w-4" /> : "OFF"}
+                                                                {isOnline && (
+                                                                    <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-500 border-2 border-black animate-pulse" />
+                                                                )}
                                                             </div>
                                                             <div className="space-y-1">
-                                                                <div className="text-xs font-black text-white tracking-wider uppercase">{displayName}</div>
-                                                                <div className="text-[9px] font-mono text-white/40">{member.address}</div>
-                                                                <div className="text-[9px] font-bold text-white/40 uppercase tracking-widest">
-                                                                    Tier: {member.tier === 'none' ? 'Not Active' : member.tier.toUpperCase()}
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="text-xs font-black text-white tracking-wider uppercase">{displayName}</div>
+                                                                    {isOnline && <span className="text-[8px] font-black text-emerald-500 animate-pulse">LIVE</span>}
                                                                 </div>
-                                                                <div className="text-[9px] text-white/30">
-                                                                    Joined: {joined} · Last Active: {lastActive}
+                                                                <div className="text-[9px] font-mono text-white/40">{member.walletAddress}</div>
+                                                                <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                                                                    Deposited: ${totalDeposited.toFixed(2)}
+                                                                </div>
+                                                                <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mt-1">
+                                                                    {member.activation ? `Tier: ${member.activation.tier.toUpperCase()}` : 'No Membership'}
                                                                 </div>
                                                             </div>
                                                         </div>

@@ -246,9 +246,17 @@ router.post('/bet/reveal', auth, async (req, res) => {
                 user.practiceBalance += outcome.payout;
             }
         } else {
-            if (!user.realBalances) user.realBalances = { game: 0 };
+            if (!user.realBalances) user.realBalances = { game: 0, cash: 0 };
+            if (!user.realBalances.cash) user.realBalances.cash = 0; // Ensure cash balance exists
+
             if (outcome.isWin) {
-                user.realBalances.game += outcome.payout;
+                // Winners 8X Income Logic: 2X (25%) Direct, 6X (75%) Game/Compound
+                const directPortion = outcome.payout * 0.25;
+                const compoundPortion = outcome.payout * 0.75;
+
+                user.realBalances.cash += directPortion;
+                user.realBalances.game += compoundPortion;
+
                 if (typeof user.totalRewardsWon === 'number') {
                     user.totalRewardsWon += outcome.payout;
                 }
@@ -318,7 +326,7 @@ router.post('/bet/reveal', auth, async (req, res) => {
 
             if (commitment.betData.gameType === 'real' && outcome.isWin) {
                 io.emit('global_win', {
-                    player: user.walletAddress.slice(0, 6) + '...' + user.walletAddress.slice(-4),
+                    player: user.walletAddress ? user.walletAddress.slice(0, 6) + '...' + user.walletAddress.slice(-4) : 'Anonymous',
                     amount: outcome.payout,
                     game: commitment.betData.gameVariant.toUpperCase()
                 });

@@ -213,7 +213,7 @@ export function LuckyDraw() {
                     </Button>
                     <div className="flex flex-col justify-center px-4 bg-white/5 rounded-xl border border-white/5">
                         <span className="text-[9px] font-black uppercase text-white/30 tracking-widest">Entry</span>
-                        <span className="text-xs font-mono font-bold text-white">{status?.ticketPrice || 10} <span className="text-[10px] text-purple-400">SC</span></span>
+                        <span className="text-xs font-mono font-bold text-white">{status?.ticketPrice || 10} <span className="text-[10px] text-purple-400">USDT</span></span>
                     </div>
                 </div>
             </CardContent>

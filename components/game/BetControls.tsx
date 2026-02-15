@@ -11,7 +11,7 @@ interface BetControlsProps {
     currencyLabel?: string;
 }
 
-export function BetControls({ amount, setAmount, disabled, currencyLabel = "SC" }: BetControlsProps) {
+export function BetControls({ amount, setAmount, disabled, currencyLabel = "USDT" }: BetControlsProps) {
     const options = [1, 10, 50];
     const [inputValue, setInputValue] = useState(amount.toString());
 

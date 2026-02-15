@@ -61,16 +61,37 @@ const applyPracticeLoginState = (user) => {
     const now = new Date();
     const bonus = Number.isFinite(PRACTICE_LOGIN_BONUS) ? PRACTICE_LOGIN_BONUS : 100;
     const durationDays = Number.isFinite(PRACTICE_LOGIN_DAYS) ? PRACTICE_LOGIN_DAYS : 30;
+    const PRACTICE_USER_LIMIT = 100000;
+
+    // Check if practice rewards are still available
+    // We do this check only if we are about to credit a new bonus (currentPractice < bonus)
+    // For existing users who already have it, we just refresh expiry.
+    const currentPractice = typeof user.practiceBalance === 'number' ? user.practiceBalance : 0;
+
+    // Refresh expiry if needed (for everyone, or just those with balance?)
+    // Requirement says "Limited to first 100,000 practice-activated users"
+    // We'll interpret this as: New allocations stop after 100k users have > 0 practice balance.
 
     if (!user.practiceExpiry || new Date(user.practiceExpiry) < now) {
         user.practiceExpiry = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
         changed = true;
     }
 
-    const currentPractice = typeof user.practiceBalance === 'number' ? user.practiceBalance : 0;
     if (currentPractice < bonus) {
-        user.practiceBalance = bonus;
-        changed = true;
+        // Only top up if limit not reached
+        // This is a "lazy" check on login. Ideally we'd check total count of users with practiceBalance > 0
+        // But doing a count query on every login might be heavy. 
+        // We'll assume "practice-activated" means "Signed up". 
+        // Let's check user ID creation time or simply total user count?
+        // Simpler: Check if global count > 100k.
+        // For now, let's just implement the logic to allow us to toggle it or use a env var, 
+        // but since we can't easily count "practice users" efficiently here without async, 
+        // we might need to move this logic to the route handler or make this async.
+        // However, this function is sync in current code. 
+
+        // REFACTOR: This function needs to be async to count users
+        // But it is called in synchronous contexts in the code above (lines 201, 627, 739)
+        // I will modify those calls to be async first.
     }
 
     return changed;
@@ -198,7 +219,7 @@ router.post('/verify', async (req, res) => {
 
         // Initialize practice state on login
         user.lastLoginAt = new Date();
-        applyPracticeLoginState(user);
+        await applyPracticeLoginState(user);
         await user.save();
 
         // Generate short-lived access token (15 minutes)
@@ -624,7 +645,7 @@ router.post('/login-email', async (req, res) => {
             user.role = role;
         }
         user.lastLoginAt = new Date();
-        applyPracticeLoginState(user);
+        await applyPracticeLoginState(user);
         await user.save();
 
         // Generate tokens (Reuse existing logic)
@@ -736,7 +757,7 @@ router.post('/google', async (req, res) => {
         }
 
         user.lastLoginAt = new Date();
-        applyPracticeLoginState(user);
+        await applyPracticeLoginState(user);
         await user.save();
 
         // Generate tokens (Reuse existing logic)

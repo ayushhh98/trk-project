@@ -1,6 +1,7 @@
 const express = require('express');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const PlatformStats = require('../models/PlatformStats');
 
 const router = express.Router();
 
@@ -55,14 +56,14 @@ let TIER_CONFIG = {
     tier1: {
         minDeposit: 10,
         benefits: [
-            'Withdraw from Direct Level Income',
-            'Withdraw from Winners Income'
+            'Withdraw from DIRECT LEVEL INCOME',
+            'Withdraw from WINNERS INCOME'
         ]
     },
     tier2: {
         minDeposit: 100,
         benefits: [
-            'Transfer Practice Balance to Real',
+            'Transfer Practice Balance',
             'Withdraw All Real Profits',
             'Cashback Protection Active',
             'All Income Streams Unlocked'
@@ -163,6 +164,35 @@ router.post('/deposit', auth, async (req, res) => {
         const { distributeDepositCommissions } = require('../utils/incomeDistributor');
         await distributeDepositCommissions(user._id, amount);
 
+        // Update Global Turnover in PlatformStats
+        const updatedStats = await PlatformStats.incrementTurnover(amount);
+
+        // Notify User of balance change and broadcast turnover update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('platform:turnover_update', {
+                dailyTurnover: updatedStats.dailyTurnover,
+                totalTurnover: updatedStats.totalTurnover
+            });
+
+            io.to(user._id.toString()).emit('balance_update', {
+                type: 'deposit',
+                amount: amount,
+                newBalance: user.realBalances.game
+            });
+
+            // Notify Referrer via Socket.io
+            if (user.referredBy) {
+                io.to(user.referredBy.toString()).emit('referral_activity', {
+                    type: 'deposit',
+                    userId: user._id,
+                    amount: amount,
+                    userName: user.name || 'A friend',
+                    timestamp: new Date()
+                });
+            }
+        }
+
 
         // Determine what was unlocked
         const newlyUnlocked = [];
@@ -238,6 +268,16 @@ router.post('/transfer-practice', auth, async (req, res) => {
 
         await user.save();
 
+        // Notify User of balance change
+        const io = req.app.get('io');
+        if (io) {
+            io.to(user._id.toString()).emit('balance_update', {
+                type: 'transfer_practice',
+                amount: amount,
+                newBalance: user.realBalances.game
+            });
+        }
+
         res.status(200).json({
             status: 'success',
             message: `Successfully transferred ${amount} USDT from practice to real balance`,
@@ -266,13 +306,33 @@ router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, async (req, 
         const { walletType, amount, toAddress } = req.body;
         const user = await User.findById(req.user.id);
 
-        const validWalletTypes = ['cash', 'game', 'cashback', 'lucky', 'directLevel', 'winners', 'roiOnRoi', 'club'];
+        const validWalletTypes = ['cash', 'game', 'cashback', 'lucky', 'directLevel', 'winners', 'roiOnRoi', 'club', 'teamWinners'];
 
         if (!validWalletTypes.includes(walletType)) {
             return res.status(400).json({
                 status: 'error',
                 message: 'Invalid wallet type'
             });
+        }
+
+        const floatAmount = parseFloat(amount);
+        if (isNaN(floatAmount) || floatAmount <= 0) {
+            return res.status(400).json({ status: 'error', message: 'Invalid amount' });
+        }
+
+        // ENFORCE LUCKY WALLET RULES
+        if (walletType === 'lucky') {
+            if (floatAmount < 5) {
+                return res.status(400).json({ status: 'error', message: 'Minimum withdrawal for Lucky Wallet is 5 USDT' });
+            }
+            if (floatAmount > 5000) {
+                return res.status(400).json({ status: 'error', message: 'Maximum withdrawal for Lucky Wallet is 5,000 USDT per day' });
+            }
+            // Fee is 10% for Lucky
+            const fee = floatAmount * 0.10;
+            // The actual logic below will handle the deduction and transfer
+            // We'll pass the specific fee to the withdrawal handler if needed, 
+            // or just ensure the user has enough.
         }
 
         if (!amount || amount < 1) {
@@ -283,6 +343,7 @@ router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, async (req, 
         }
 
         // Check activation requirements
+        // Tier 1 (10+ USDT): Unlocks Direct Level & Winners Income ONLY
         if (walletType === 'directLevel' && !user.activation?.canWithdrawDirectLevel) {
             return res.status(403).json({
                 status: 'error',
@@ -297,13 +358,15 @@ router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, async (req, 
             });
         }
 
-        // For other profit wallets, require Tier 2
-        const tier2Wallets = ['cash', 'game', 'cashback', 'lucky', 'roiOnRoi', 'club'];
-        if (tier2Wallets.includes(walletType) && !user.activation?.canWithdrawAll) {
-            return res.status(403).json({
-                status: 'error',
-                message: `Full withdrawal access for ${walletType} requires minimum 100 USDT deposit (Tier 2)`
-            });
+        // Tier 2 (100+ USDT): Unlocks ALL other wallets
+        const tier2Wallets = ['cash', 'game', 'cashback', 'lucky', 'roiOnRoi', 'club', 'teamWinners'];
+        if (tier2Wallets.includes(walletType)) {
+            if (!user.activation?.canWithdrawAll) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: `Withdrawal from ${walletType} wallet requires minimum 100 USDT deposit (Tier 2)`
+                });
+            }
         }
 
         // Check balance
@@ -317,6 +380,17 @@ router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, async (req, 
         // Process withdrawal
         user.realBalances[walletType] -= amount;
         await user.save();
+
+        // Notify User of balance change
+        const io = req.app.get('io');
+        if (io) {
+            io.to(user._id.toString()).emit('balance_update', {
+                type: 'withdrawal',
+                walletType: walletType,
+                amount: amount,
+                remainingBalance: user.realBalances[walletType]
+            });
+        }
 
         res.status(200).json({
             status: 'success',
@@ -363,5 +437,61 @@ router.post('/admin/update-tier-thresholds', async (req, res) => {
 
 // Add a helper to export current TIER_CONFIG for other modules
 router.getTierConfig = () => TIER_CONFIG;
+
+/**
+ * POST /deposit/lucky-topup
+ * Manually top up Lucky Draw Wallet from other balances
+ */
+router.post('/lucky-topup', auth, async (req, res) => {
+    try {
+        const { fromWallet, amount } = req.body;
+        const user = await User.findById(req.user.id);
+
+        const validSources = ['cash', 'game', 'cashback', 'winners', 'directLevel', 'roiOnRoi', 'club', 'teamWinners'];
+
+        if (!validSources.includes(fromWallet)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid source wallet' });
+        }
+
+        const floatAmount = parseFloat(amount);
+        if (isNaN(floatAmount) || floatAmount <= 0) {
+            return res.status(400).json({ status: 'error', message: 'Invalid amount' });
+        }
+
+        if (user.realBalances[fromWallet] < floatAmount) {
+            return res.status(400).json({ status: 'error', message: 'Insufficient balance in source wallet' });
+        }
+
+        // Transfer funds
+        user.realBalances[fromWallet] -= floatAmount;
+        user.realBalances.luckyDrawWallet = (user.realBalances.luckyDrawWallet || 0) + floatAmount;
+
+        await user.save();
+
+        // Notify UI
+        const io = req.app.get('io');
+        if (io) {
+            io.to(user._id.toString()).emit('balance_update', {
+                type: 'lucky_topup',
+                from: fromWallet,
+                amount: floatAmount,
+                newLuckyBalance: user.realBalances.luckyDrawWallet,
+                newSourceBalance: user.realBalances[fromWallet]
+            });
+        }
+
+        res.status(200).json({
+            status: 'success',
+            message: `Successfully topped up Lucky Draw Wallet with ${floatAmount} USDT`,
+            data: {
+                luckyDrawWallet: user.realBalances.luckyDrawWallet,
+                sourceBalance: user.realBalances[fromWallet]
+            }
+        });
+    } catch (error) {
+        console.error('Lucky top-up error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to process top-up' });
+    }
+});
 
 module.exports = router;

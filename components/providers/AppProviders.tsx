@@ -4,6 +4,7 @@ import { ReactNode, Suspense } from "react";
 import { Web3Provider } from "@/components/providers/Web3Provider";
 import { WalletProvider } from "@/components/providers/WalletProvider";
 import { ReferralTracker } from "@/components/referral/ReferralTracker";
+import { ReferralOnboarding } from "@/components/referral/ReferralOnboarding";
 import { Toaster } from "sonner";
 
 export default function AppProviders({ children }: { children: ReactNode }) {
@@ -14,6 +15,7 @@ export default function AppProviders({ children }: { children: ReactNode }) {
                     <ReferralTracker />
                 </Suspense>
                 {children}
+                <ReferralOnboarding />
                 <Toaster
                     position="top-right"
                     richColors
