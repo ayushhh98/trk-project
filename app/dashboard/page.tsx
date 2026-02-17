@@ -4,7 +4,7 @@ import { useWallet } from "@/components/providers/WalletProvider";
 import { Button } from "@/components/ui/Button";
 import { CountdownTimer } from "@/components/dashboard/CountdownTimer";
 import { CyberneticTerminal } from "@/components/dashboard/CyberneticTerminal";
-import { Trophy, Coins, Users, TrendingUp, Zap, ShieldCheck, Wallet, Play, AlertTriangle } from "lucide-react";
+import { Trophy, Coins, Users, TrendingUp, Zap, ShieldCheck, Wallet, Play, AlertTriangle, Copy } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,9 @@ import { RefreshCw } from "lucide-react";
 import { LiveWinnerFeed } from "@/components/jackpot/LiveWinnerFeed";
 import { PromoCarousel } from "@/components/dashboard/PromoCarousel";
 import { contentAPI } from "@/lib/api";
+import { BalanceAnimator } from "@/components/cash/BalanceAnimator";
+import { ConfettiEffect } from "@/components/effects/ConfettiEffect";
+import { toast } from "sonner";
 
 
 export default function DashboardPage() {
@@ -77,6 +80,22 @@ export default function DashboardPage() {
     const shortAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Not Connected";
     const displayAddress = isClient ? shortAddress : "Not Connected";
     const hasWallet = isClient && !!address;
+    const minGasBalance = Number.isFinite(Number(process.env.NEXT_PUBLIC_MIN_GAS_BNB))
+        ? Number(process.env.NEXT_PUBLIC_MIN_GAS_BNB)
+        : 0.002;
+    const nativeBalanceValue = isClient ? Number.parseFloat(nativeBalance || "0") : 0;
+    const showGasHelp = hasWallet && !isLoading && Number.isFinite(nativeBalanceValue) && nativeBalanceValue < minGasBalance;
+
+    const handleCopyAddress = async () => {
+        if (!address || typeof navigator === "undefined") return;
+        try {
+            await navigator.clipboard.writeText(address);
+            toast.success("Wallet address copied");
+        } catch (err) {
+            console.error("Copy address failed:", err);
+            toast.error("Failed to copy address");
+        }
+    };
 
     const promoPoster = posters.find(p => p.type === 'promo') || {
         title: "Become The Protocol Owner",
@@ -97,6 +116,7 @@ export default function DashboardPage() {
 
     return (
         <div className="bg-transparent pb-32">
+            <ConfettiEffect />
             <main className="container mx-auto px-4 py-6 space-y-8">
 
                 {/* Simplified Header */}
@@ -181,8 +201,12 @@ export default function DashboardPage() {
                                     <div className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">
                                         {isRealMode ? "Total Assets" : "Practice Balance"}
                                     </div>
-                                    <div className="text-4xl font-mono font-bold text-white tracking-tight flex items-baseline gap-2">
-                                        {isRealMode ? (realBalances.totalUnified || 0).toFixed(2) : practiceBalance}
+                                    <div className="flex items-baseline gap-2">
+                                        <BalanceAnimator
+                                            balance={isRealMode ? (realBalances.totalUnified || 0) : parseFloat(practiceBalance)}
+                                            className="text-4xl font-mono font-bold text-white tracking-tight"
+                                            suffix=""
+                                        />
                                         <span className={cn("text-sm font-bold", isRealMode ? "text-amber-500" : "text-emerald-500")}>USDT</span>
                                     </div>
                                 </div>

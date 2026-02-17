@@ -54,6 +54,51 @@ router.get('/status', async (req, res) => {
 });
 
 /**
+ * GET /lucky-draw/recent-winners
+ * Get list of recent winners across all rounds
+ */
+router.get('/recent-winners', async (req, res) => {
+    try {
+        const JackpotRound = require('../models/JackpotRound');
+
+        // Find last 10 completed rounds with winners
+        const recentRounds = await JackpotRound.find({
+            status: 'completed',
+            'winners.0': { $exists: true }
+        })
+            .sort({ drawExecutedAt: -1 })
+            .limit(10);
+
+        // Flatten winners from all rounds
+        const winners = [];
+        recentRounds.forEach(round => {
+            // Take up to 3 winners per round to keep it interesting but not overwhelming
+            round.winners.slice(0, 3).forEach(winner => {
+                winners.push({
+                    id: `${round.roundNumber}-${winner.walletAddress}-${winner._id}`,
+                    wallet: winner.walletAddress,
+                    prize: winner.prize,
+                    rank: winner.rank,
+                    timestamp: round.drawExecutedAt,
+                    roundNumber: round.roundNumber
+                });
+            });
+        });
+
+        res.status(200).json({
+            status: 'success',
+            data: winners.slice(0, 20) // Limit to top 20 recent winners
+        });
+    } catch (error) {
+        console.error('Get recent winners error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to get recent winners'
+        });
+    }
+});
+
+/**
  * POST /lucky-draw/buy-ticket
  * Purchase jackpot tickets
  */
@@ -236,7 +281,7 @@ router.post('/admin/withdraw-surplus', auth, requireJackpotAdmin, async (req, re
 
         const JackpotRound = require('../models/JackpotRound');
 
-        // Get all completed rounds with unwithdra wn surplus
+        // Get all completed rounds with unwithdrawn surplus
         const completedRounds = await JackpotRound.find({
             status: 'completed',
             surplusWithdrawn: false,
@@ -311,4 +356,3 @@ router.post('/admin/execute-draw', auth, requireJackpotAdmin, async (req, res) =
 });
 
 module.exports = router;
-

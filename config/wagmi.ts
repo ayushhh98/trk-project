@@ -1,6 +1,23 @@
 import { http, createConfig, cookieStorage, createStorage } from 'wagmi';
 import { bsc, bscTestnet } from 'wagmi/chains';
 import { injected, walletConnect } from 'wagmi/connectors';
+import { getMetaMaskProvider, getTrustProvider } from '@/lib/walletProviders';
+
+const metaMaskTarget = {
+    id: 'metaMask',
+    name: 'MetaMask',
+    provider(windowObj?: any) {
+        return getMetaMaskProvider(windowObj);
+    }
+};
+
+const trustTarget = {
+    id: 'trust',
+    name: 'Trust Wallet',
+    provider(windowObj?: any) {
+        return getTrustProvider(windowObj);
+    }
+};
 
 // WalletConnect Project ID (Load from Env or use public fallback)
 export const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'c57ca95b47569778a828d19178114f4d';
@@ -14,8 +31,8 @@ export const getWagmiConfig = () => {
     const connectors = isBrowser
         ? [
             // Use injected MetaMask to avoid MetaMask SDK network fetch errors.
-            injected({ target: 'metaMask' }),
-            injected({ target: 'trust' }),
+            injected({ target: metaMaskTarget }),
+            injected({ target: trustTarget }),
             injected(), // Fallback for other injected wallets
             walletConnect({
                 projectId,

@@ -31,19 +31,54 @@ export function LiveWinnerFeed({
 }: LiveWinnerFeedProps) {
     const [winners, setWinners] = useState<Winner[]>([]);
     const [isLive, setIsLive] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Fetch initial winners on mount
+    useEffect(() => {
+        const fetchRecentWinners = async () => {
+            try {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lucky-draw/recent-winners`);
+                const result = await response.json();
+
+                if (result.status === 'success' && result.data) {
+                    // Map backend winner format to frontend Winner interface
+                    const formattedWinners: Winner[] = result.data.map((w: any) => ({
+                        id: w.id,
+                        wallet: maskWallet(w.wallet),
+                        prize: w.prize,
+                        rank: w.rank,
+                        timestamp: new Date(w.timestamp),
+                        roundNumber: w.roundNumber
+                    }));
+                    setWinners(formattedWinners);
+                }
+            } catch (error) {
+                console.error('Failed to fetch recent winners:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchRecentWinners();
+    }, [maxItems]);
 
     const { isConnected } = useJackpotSocket({
         onWinnerAnnounced: (data) => {
             const newWinner: Winner = {
                 id: `${data.roundNumber}-${data.wallet}-${Date.now()}`,
-                wallet: data.wallet || maskWallet(data.walletAddress),
+                wallet: maskWallet(data.wallet || data.walletAddress),
                 prize: data.prize,
                 rank: data.rank,
                 timestamp: new Date(),
                 roundNumber: data.roundNumber
             };
 
-            setWinners(prev => [newWinner, ...prev].slice(0, maxItems));
+            setWinners(prev => {
+                // Avoid duplicates
+                const exists = prev.some(w => w.wallet === newWinner.wallet && w.prize === newWinner.prize && w.roundNumber === newWinner.roundNumber);
+                if (exists) return prev;
+                return [newWinner, ...prev].slice(0, maxItems);
+            });
             setIsLive(true);
 
             // Show celebration for top 3 winners
@@ -72,8 +107,10 @@ export function LiveWinnerFeed({
     });
 
     // Mask wallet address for privacy
-    const maskWallet = (address: string) => {
+    function maskWallet(address: string) {
         if (!address || address.length < 10) return address;
+        // If already masked (contains ...), return as is
+        if (address.includes('...')) return address;
         return `${address.slice(0, 6)}...${address.slice(-4)}`;
     };
 

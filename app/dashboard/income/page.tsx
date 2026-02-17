@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { useReadContract } from "wagmi";
 import { TRKGameABI } from "@/config/abis";
 import { GAME_CONTRACT_ADDRESS } from "@/config/contracts";
-import { formatUnits } from "viem";
+import { formatUnits, isAddress } from "viem";
 import { toast } from "sonner";
 import { WithdrawalModal } from "@/components/cash/WithdrawalModal";
 import { WithdrawalMatrix } from "@/components/admin/WithdrawalMatrix";
@@ -30,12 +30,13 @@ const GlowBackground = () => (
 
 export default function IncomePage() {
     const { address, user, isConnected, realBalances, withdraw, unclaimedRounds, claimLiquiditySync } = useWallet();
+    const isValidAddress = !!address && isAddress(address);
     const { data: levelBreakdown } = useReadContract({
         address: GAME_CONTRACT_ADDRESS as `0x${string}`,
         abi: TRKGameABI,
         functionName: 'getLevelIncomeBreakdown',
         args: [address as `0x${string}`],
-        query: { enabled: !!address }
+        query: { enabled: isValidAddress }
     });
     const [expandedStream, setExpandedStream] = useState<number | null>(1);
     const [isLoaded, setIsLoaded] = useState(false);

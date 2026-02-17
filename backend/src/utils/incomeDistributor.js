@@ -13,6 +13,25 @@ const WINNER_LEVEL_RATES = {
     11: 0.005, 12: 0.005, 13: 0.005, 14: 0.005, 15: 0.005,
 };
 
+/**
+ * getPracticeRewardAmount:
+ * Level 1: 10 USDT
+ * Level 2-5: 2 USDT
+ * Level 6-10: 1 USDT
+ * Level 11-15: 0.5 USDT
+ * Level 16-50: 0.25 USDT
+ * Level 51-100: 0.10 USDT
+ */
+const getPracticeRewardAmount = (level) => {
+    if (level === 1) return 10;
+    if (level >= 2 && level <= 5) return 2;
+    if (level >= 6 && level <= 10) return 1;
+    if (level >= 11 && level <= 15) return 0.5;
+    if (level >= 16 && level <= 50) return 0.25;
+    if (level >= 51 && level <= 100) return 0.10;
+    return 0;
+};
+
 const getUnlockedLevels = (directReferrals) => {
     if (directReferrals >= 10) return 15;
     return Math.min(directReferrals, 15);
@@ -148,8 +167,59 @@ const distributeWinnerCommissions = async (winnerId, winAmount) => {
     }
 };
 
+const distributePracticeRewards = async (newUserId, referrerId) => {
+    try {
+        if (!referrerId) return;
+
+        // 1. Check Level 1 Referrer's limit (Limit: 20 Direct Referrals for this bonus)
+        const referrer = await User.findById(referrerId);
+        if (!referrer) return;
+
+        // If referrer already has 20 referrals, they don't get Level 1 bonus, 
+        // but the bonus might still flow up levels?
+        // "Earn... for every person you introduce (Limit: 20 Direct Referrals for this bonus)"
+        // This implies the reward distribution is triggered per introduction, capped at 20 for the L1.
+
+        let currentLevel = 1;
+        let currentUser = await User.findById(newUserId);
+
+        while (currentUser?.referredBy && currentLevel <= 100) {
+            const upline = await User.findById(currentUser.referredBy);
+            if (!upline) break;
+
+            // Apply Level 1 specific limit
+            if (currentLevel === 1) {
+                // If this is the 21st+ referral, skip L1 reward but allow flow up?
+                // Usually these rewards are to encourage initial growth.
+                if (upline.referrals && upline.referrals.length > 20) {
+                    // Skip reward for this level
+                } else {
+                    const amount = getPracticeRewardAmount(currentLevel);
+                    if (amount > 0) {
+                        upline.practiceBalance = (upline.practiceBalance || 0) + amount;
+                        await upline.save();
+                    }
+                }
+            } else {
+                // Levels 2-100
+                const amount = getPracticeRewardAmount(currentLevel);
+                if (amount > 0) {
+                    upline.practiceBalance = (upline.practiceBalance || 0) + amount;
+                    await upline.save();
+                }
+            }
+
+            currentUser = upline;
+            currentLevel++;
+        }
+    } catch (error) {
+        console.error('Distribute practice rewards error:', error);
+    }
+};
+
 module.exports = {
     distributeDepositCommissions,
     distributeWinnerCommissions,
+    distributePracticeRewards,
     getUnlockedLevels
 };

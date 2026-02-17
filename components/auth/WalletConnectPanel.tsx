@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { QRCodeCanvas } from "qrcode.react";
 import { ShieldCheck, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import { detectInjectedWallets } from "@/lib/walletProviders";
 
 type WalletKey = "info" | "trust" | "metamask" | "ready" | "ledger";
 
@@ -44,6 +45,7 @@ export function WalletConnectPanel({
     const [qrValue, setQrValue] = useState("");
     const [walletOptionsState, setWalletOptionsState] = useState<WalletOption[]>(walletOptions);
     const [recentWallet, setRecentWallet] = useState<WalletKey | null>(null);
+    const announcedRef = useRef({ hasMetaMask: false, hasTrust: false });
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -57,27 +59,20 @@ export function WalletConnectPanel({
 
         // Dynamic Wallet Detection
         const checkWallets = () => {
-            const eth = (window as any).ethereum;
-            const providers = Array.isArray(eth?.providers) ? eth.providers : [];
-            const hasTrustProvider = providers.some((provider: any) => provider?.isTrust || provider?.isTrustWallet);
-            const hasMetaMaskProvider = providers.some((provider: any) => provider?.isMetaMask);
-
-            const isTrust = !!(window as any).trustwallet
-                || !!eth?.isTrust
-                || !!eth?.isTrustWallet
-                || hasTrustProvider;
-            const isMetaMask = !!eth?.isMetaMask || hasMetaMaskProvider;
+            const injected = detectInjectedWallets(window);
+            const hasMetaMask = injected.hasMetaMask || announcedRef.current.hasMetaMask;
+            const hasTrust = injected.hasTrust || announcedRef.current.hasTrust;
 
             const options: WalletOption[] = [
                 {
                     key: "trust",
                     label: "Trust Wallet",
-                    section: isTrust ? "installed" : "recommended"
+                    section: hasTrust ? "installed" : "recommended"
                 },
                 {
                     key: "metamask",
                     label: "MetaMask",
-                    section: isMetaMask ? "installed" : "recommended"
+                    section: hasMetaMask ? "installed" : "recommended"
                 },
                 { key: "ready", label: "Ready", section: "recommended" },
                 { key: "ledger", label: "Ledger", section: "recommended" }
@@ -91,7 +86,30 @@ export function WalletConnectPanel({
 
         // Listen for injection events (rare but possible)
         window.addEventListener('ethereum#initialized', checkWallets);
-        return () => window.removeEventListener('ethereum#initialized', checkWallets);
+        // EIP-6963 provider discovery (multi-wallet)
+        const handleEip6963 = (event: Event) => {
+            const detail = (event as CustomEvent).detail as any;
+            const rdns = (detail?.info?.rdns || "").toString().toLowerCase();
+            const name = (detail?.info?.name || "").toString().toLowerCase();
+            if (rdns.includes("io.metamask") || name.includes("metamask")) {
+                announcedRef.current.hasMetaMask = true;
+            }
+            if (rdns.includes("com.trustwallet") || name.includes("trust wallet") || name === "trust") {
+                announcedRef.current.hasTrust = true;
+            }
+            checkWallets();
+        };
+        window.addEventListener('eip6963:announceProvider', handleEip6963 as EventListener);
+        window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+        // Re-check shortly after mount to catch late injections
+        const lateCheck = window.setTimeout(checkWallets, 600);
+
+        return () => {
+            window.removeEventListener('ethereum#initialized', checkWallets);
+            window.removeEventListener('eip6963:announceProvider', handleEip6963 as EventListener);
+            window.clearTimeout(lateCheck);
+        };
     }, [qrPath]);
 
     const handleSelect = async (wallet: WalletKey) => {

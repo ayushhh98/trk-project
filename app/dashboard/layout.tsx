@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { Footer } from "@/components/layout/Footer";
+import { NotificationProvider } from "@/components/providers/NotificationProvider";
 
 export default function DashboardLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const { isConnected, isLoading, isSwitchingWallet } = useWallet();
+    const { isConnected, isLoading, isSwitchingWallet, user } = useWallet();
     const router = useRouter();
 
     // Redirect to auth if not connected
@@ -28,14 +29,16 @@ export default function DashboardLayout({
     }, [isConnected, isLoading, isSwitchingWallet, router]);
 
     return (
-        <div className="min-h-screen bg-background">
-            <Sidebar />
-            <div className="lg:pl-[248px] min-h-screen flex flex-col overflow-x-hidden">
-                <div className="flex-1">
-                    {children}
+        <NotificationProvider userId={user?.id}>
+            <div className="min-h-screen bg-background">
+                <Sidebar />
+                <div className="lg:pl-[248px] min-h-screen flex flex-col overflow-x-hidden">
+                    <div className="flex-1">
+                        {children}
+                    </div>
+                    <Footer />
                 </div>
-                <Footer />
             </div>
-        </div>
+        </NotificationProvider>
     );
 }

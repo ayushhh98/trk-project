@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const PlatformStats = require('../models/PlatformStats');
 
 const router = express.Router();
+const Notification = require('../models/Notification');
 
 // Helper to update team volume recursively up the tree
 const updateTeamVolume = async (userId, depositAmount, sourceUserId = null) => {
@@ -179,6 +180,27 @@ router.post('/deposit', auth, async (req, res) => {
                 type: 'deposit',
                 amount: amount,
                 newBalance: user.realBalances.game
+            });
+
+            // Create notification record
+            const notification = await Notification.createNotification({
+                userId: user._id,
+                type: 'deposit',
+                category: 'transaction',
+                title: `Deposit of ${amount.toFixed(2)} USDT`,
+                message: `credited to your vault.`,
+                icon: 'coins',
+                metadata: {
+                    amount,
+                    balance: user.realBalances.game,
+                    tier: user.activation.tier
+                }
+            });
+
+            // Emit notification event
+            io.to(user._id.toString()).emit('notification', {
+                notification: notification.toObject(),
+                unreadCount: await Notification.getUnreadCount(user._id)
             });
 
             // Notify Referrer via Socket.io

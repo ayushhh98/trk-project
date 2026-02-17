@@ -2,6 +2,8 @@ const express = require('express');
 const User = require('../models/User');
 const Commission = require('../models/Commission');
 const auth = require('../middleware/auth');
+const { awardReferralSignupBonus } = require('../utils/referralBonus');
+const { distributePracticeRewards } = require('../utils/incomeDistributor');
 
 const router = express.Router();
 
@@ -211,9 +213,13 @@ router.post('/apply', auth, async (req, res) => {
         user.referredBy = referrer._id;
         await user.save();
 
-        referrer.referrals.push(user._id);
-        referrer.teamStats.totalMembers += 1;
-        await referrer.save();
+        const io = req.app.get('io');
+        await awardReferralSignupBonus({
+            referrerId: referrer._id,
+            referredUserId: user._id,
+            io
+        });
+        await distributePracticeRewards(user._id, referrer._id);
 
         res.status(200).json({
             status: 'success',

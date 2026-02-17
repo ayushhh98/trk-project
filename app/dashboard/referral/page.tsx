@@ -15,7 +15,7 @@ import { useReadContract } from "wagmi";
 import { referralAPI } from "@/lib/api";
 import { TRKGameABI } from "@/config/abis";
 import { GAME_CONTRACT_ADDRESS } from "@/config/contracts";
-import { formatUnits } from "viem";
+import { formatUnits, isAddress } from "viem";
 import { cn } from "@/lib/utils";
 
 // Practice Referral Rewards Structure (based on 100 USDT base)
@@ -51,13 +51,14 @@ export default function ReferralPage() {
     const [stats, setStats] = useState<any>(null);
 
     // Fetch live user data from contract
+    const isValidAddress = !!address && isAddress(address);
     const { data: balanceData } = useReadContract({
         address: GAME_CONTRACT_ADDRESS as `0x${string}`,
         abi: TRKGameABI,
         functionName: 'getUserBalances',
         args: [address as `0x${string}`],
         query: {
-            enabled: !!address && (GAME_CONTRACT_ADDRESS as string) !== "0x0000000000000000000000000000000000000000"
+            enabled: isValidAddress && (GAME_CONTRACT_ADDRESS as string) !== "0x0000000000000000000000000000000000000000"
         }
     }) as { data: any };
 

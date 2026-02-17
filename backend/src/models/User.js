@@ -153,7 +153,9 @@ const userSchema = new mongoose.Schema({
         canWithdrawAll: { type: Boolean, default: false },
         cashbackActive: { type: Boolean, default: false },
         allStreamsUnlocked: { type: Boolean, default: false },
-        registrationTime: { type: Date, default: Date.now } // Fixed for guest mode dashboard
+        registrationTime: { type: Date, default: Date.now }, // Fixed for guest mode dashboard
+        totalPracticeVolume: { type: Number, default: 0 },
+        totalRealVolume: { type: Number, default: 0 }
     },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
@@ -175,7 +177,14 @@ userSchema.methods.updateActivationTier = function (tier1Threshold = 10, tier2Th
 
         this.activation.canWithdrawDirectLevel = true;
         this.activation.canWithdrawWinners = true;
-        this.activation.canTransferPractice = true;
+
+        // Tier 2 Bridge to Cash: Require 100+ USDT Deposit AND 100+ USDT Practice Volume
+        if (this.activation.totalPracticeVolume >= 100) {
+            this.activation.canTransferPractice = true;
+        } else {
+            this.activation.canTransferPractice = false;
+        }
+
         this.activation.canWithdrawAll = true; // Withdraw from Game, Cash, ROI, Club, etc.
         this.activation.cashbackActive = true;
         this.activation.allStreamsUnlocked = true;
@@ -349,11 +358,45 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
     return bcrypt.compare(candidatePassword, this.password);
 };
 
+
 // Generate random nonce
 userSchema.methods.generateNonce = function () {
     this.nonce = Math.floor(Math.random() * 1000000).toString();
     return this.nonce;
 };
+
+// Virtual properties for calculated balances
+userSchema.virtual('realBalances.grandTotal').get(function () {
+    if (!this.realBalances) return 0;
+    return (this.realBalances.cash || 0) +
+        (this.realBalances.game || 0) +
+        (this.realBalances.directLevel || 0) +
+        (this.realBalances.winners || 0) +
+        (this.realBalances.teamWinners || 0) +
+        (this.realBalances.cashback || 0) +
+        (this.realBalances.roiOnRoi || 0) +
+        (this.realBalances.club || 0) +
+        (this.realBalances.lucky || 0);
+});
+
+userSchema.virtual('realBalances.totalUnified').get(function () {
+    if (!this.realBalances) return 0;
+    // Sum of all income streams (excluding cash and game which are operational balances)
+    return (this.realBalances.directLevel || 0) +
+        (this.realBalances.winners || 0) +
+        (this.realBalances.teamWinners || 0) +
+        (this.realBalances.cashback || 0) +
+        (this.realBalances.roiOnRoi || 0) +
+        (this.realBalances.club || 0) +
+        (this.realBalances.lucky || 0) +
+        (this.realBalances.game || 0) +
+        (this.realBalances.cash || 0);
+});
+
+// Enable virtuals in JSON output
+userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toObject', { virtuals: true });
+
 
 const User = mongoose.model('User', userSchema);
 

@@ -242,6 +242,9 @@ router.post('/bet/reveal', auth, async (req, res) => {
         const user = await User.findById(req.user.id);
 
         if (commitment.betData.gameType === 'practice') {
+            // Track practice volume (all bets count toward activation)
+            user.activation.totalPracticeVolume = (user.activation.totalPracticeVolume || 0) + commitment.betData.betAmount;
+
             if (outcome.isWin) {
                 user.practiceBalance += outcome.payout;
             }
@@ -250,7 +253,7 @@ router.post('/bet/reveal', auth, async (req, res) => {
             if (!user.realBalances.cash) user.realBalances.cash = 0; // Ensure cash balance exists
 
             if (outcome.isWin) {
-                // Winners 8X Income Logic: 2X (25%) Direct, 6X (75%) Game/Compound
+                // Winners 8X Income Logic: 2X (25%) Direct Cash, 6X (75%) Game/Compound
                 const directPortion = outcome.payout * 0.25;
                 const compoundPortion = outcome.payout * 0.75;
 
@@ -260,6 +263,24 @@ router.post('/bet/reveal', auth, async (req, res) => {
                 if (typeof user.totalRewardsWon === 'number') {
                     user.totalRewardsWon += outcome.payout;
                 }
+
+                // Trigger Winner Level Income (15 levels)
+                try {
+                    const { distributeWinnerCommissions } = require('../utils/incomeDistributor');
+                    await distributeWinnerCommissions(user._id, outcome.payout);
+                } catch (distError) {
+                    console.error('Failed to distribute winner commissions:', distError);
+                }
+            }
+
+            // Track Real Money Trading Volume for referral qualification
+            user.activation.totalRealVolume = (user.activation.totalRealVolume || 0) + commitment.betData.betAmount;
+
+            // Increment team volume for uplines
+            if (user.referredBy) {
+                await require('../models/User').findByIdAndUpdate(user.referredBy, {
+                    $inc: { 'teamStats.totalTeamVolume': commitment.betData.betAmount }
+                });
             }
         }
 
@@ -268,6 +289,11 @@ router.post('/bet/reveal', auth, async (req, res) => {
         if (outcome.isWin) {
             user.gamesWon += 1;
             user.totalWinnings += (outcome.payout - commitment.betData.betAmount);
+        }
+
+        // Recalculate activation tier in case volume requirement was met
+        if (commitment.betData.gameType === 'practice') {
+            user.updateActivationTier();
         }
 
         await user.save();

@@ -1087,130 +1087,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Security & Policies Section */}
-      <section id="security" className="py-32 bg-black border-t border-white/5">
-        <div className="container mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-20 items-center">
-            <div className="space-y-10">
-              <div className="space-y-4">
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  whileInView={{ opacity: 1 }}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black tracking-[0.2em] uppercase"
-                >
-                  <ShieldCheck className="h-3 w-3" />
-                  Protection Protocol
-                </motion.div>
-                <h2 className="text-5xl md:text-6xl font-display font-black text-white italic uppercase tracking-tighter">
-                  Security & <span className="text-emerald-500 text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-600">Policies</span>
-                </h2>
-                <p className="text-lg text-white/40 uppercase tracking-widest leading-relaxed">
-                  Rigorous standards ensuring a safe and fair environment for all participants.
-                </p>
-              </div>
 
-              <div className="grid sm:grid-cols-2 gap-4">
-                {[
-                  { icon: CheckCircle2, label: "18+ Exclusive", desc: "Strict adult-only participation policy." },
-                  { icon: Lock, label: "One Account Rule", desc: "Prevention of sybil attacks and multi-accounting." },
-                  { icon: Wallet, label: "Self-Custody", desc: "You maintain full control of your private keys." },
-                  { icon: Zap, label: "BEP20 Standard", desc: "Native Binance Smart Chain efficiency." },
-                  { icon: Activity, label: "On-Chain Logic", desc: "Fully automated smart contract execution." },
-                  { icon: Users, label: "Transparent", desc: "Every transaction is verifiable on BscScan." }
-                ].map((p, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="p-5 rounded-3xl bg-white/[0.02] border border-white/10 flex items-center gap-4 hover:bg-white/[0.05] transition-all group"
-                  >
-                    <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-                      <p.icon className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black text-white uppercase tracking-tight">{p.label}</div>
-                      <div className="text-[9px] text-white/20 font-bold uppercase">{p.desc}</div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Risk Notice */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                className="p-6 rounded-[2rem] bg-amber-500/5 border border-amber-500/10 space-y-3"
-              >
-                <div className="flex items-center gap-2 text-amber-500">
-                  <AlertCircle className="h-5 w-5" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Risk Notice</span>
-                </div>
-                <p className="text-xs leading-relaxed text-amber-500/60 font-medium italic">
-                  Blockchain transactions are irreversible. Participate responsibly. Real-time implementation is working properly across all ecosystem modules.
-                </p>
-              </motion.div>
-            </div>
-
-            <div className="relative">
-              <div className="absolute inset-0 bg-emerald-500/10 blur-[100px] pointer-events-none" />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                className="relative rounded-[4rem] border border-white/10 bg-white/[0.02] backdrop-blur-3xl p-2 overflow-hidden shadow-2xl"
-              >
-                <div className="bg-black/90 rounded-[3.8rem] p-10 space-y-8">
-                  <div className="space-y-2">
-                    <div className="text-[10px] text-emerald-500 font-black uppercase tracking-widest">Security Audit</div>
-                    <div className="flex items-center justify-between">
-                      <div className="text-3xl font-black text-white uppercase italic">Status</div>
-                      <span className="text-green-400 font-black tracking-widest text-xl italic">PASSED</span>
-                    </div>
-                    <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        whileInView={{ width: "98%" }}
-                        className="h-full bg-emerald-500"
-                        transition={{ duration: 2 }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-1">
-                      <div className="text-[9px] text-white/20 font-black uppercase tracking-widest">Liquidity</div>
-                      <div className="text-xl font-black text-white italic">LOCKED</div>
-                    </div>
-                    <div className="space-y-1 text-right">
-                      <div className="text-[9px] text-white/20 font-black uppercase tracking-widest">Contract</div>
-                      <div className="text-xl font-black text-white italic">VERIFIED</div>
-                    </div>
-                  </div>
-
-                  <div className="p-6 rounded-3xl bg-white/5 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                        <Activity className="h-4 w-4" />
-                      </div>
-                      <div className="text-[10px] font-black text-white uppercase tracking-widest">System Health</div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-[9px] font-black uppercase">
-                        <span className="text-white/40">Uptime</span>
-                        <span className="text-emerald-400">100.0%</span>
-                      </div>
-                      <div className="flex justify-between text-[9px] font-black uppercase">
-                        <span className="text-white/40">Latent Buffer</span>
-                        <span className="text-emerald-400">Optimal</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* FAQ Section */}
       <section id="faq" className="py-32 bg-black/80 border-t border-white/5">
@@ -1305,15 +1182,10 @@ export default function Home() {
                 Terms & Disclosures
               </h2>
               <p className="text-white/60 text-sm leading-relaxed">
-                By using TRK Game, you agree to the platform terms, sweepstakes rules, and risk disclosures.
+                By using TRK Game, you agree to the platform terms and risk disclosures.
                 Please review the legal documentation before participating in real play.
               </p>
               <div className="flex flex-wrap gap-4">
-                <Link href="/legal/sweepstakes">
-                  <Button size="lg" className="h-12 px-6 bg-white text-black font-bold rounded-xl">
-                    View Terms
-                  </Button>
-                </Link>
                 <Link href="/auth">
                   <Button size="lg" variant="outline" className="h-12 px-6 border-white/10 text-white font-bold rounded-xl hover:bg-white/5">
                     Launch App

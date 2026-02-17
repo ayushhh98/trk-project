@@ -8,6 +8,8 @@ import { DepositModal } from "@/components/cash/DepositModal";
 import { WithdrawalModal } from "@/components/cash/WithdrawalModal";
 
 import { DepositHistoryTable } from "@/components/cash/DepositHistoryTable";
+import { BalanceAnimator } from "@/components/cash/BalanceAnimator";
+import { ConfettiEffect } from "@/components/effects/ConfettiEffect";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ArrowLeft, TrendingUp, Shield, Activity, Lock, Globe, ExternalLink, Zap, Smartphone, Landmark, Eye, EyeOff, Wallet, Repeat, Plus, CheckCircle2 } from "lucide-react";
@@ -15,6 +17,10 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
+import { toast } from "sonner";
+import { useNotifications } from "@/components/providers/NotificationProvider";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { NotificationPanel } from "@/components/notifications/NotificationPanel";
 
 function CashDashboardContent() {
     const {
@@ -23,6 +29,7 @@ function CashDashboardContent() {
         isConnected, isLoading, user, deposits, gameHistory, isRegisteredOnChain,
         address, connect, recentWallets, switchWallet, isSwitchingWallet, deposit
     } = useWallet();
+    const { notifications, unreadCount, isPanelOpen, togglePanel, markAsRead, markAllAsRead } = useNotifications();
     const router = useRouter();
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isDepositOpen, setIsDepositOpen] = useState(false);
@@ -126,22 +133,11 @@ function CashDashboardContent() {
                         >
                             {hideBalances ? <EyeOff className="h-4 w-4 opacity-100 text-emerald-500" /> : <Eye className="h-4 w-4 opacity-40" />}
                         </Button>
-                        <Button
-                            onClick={() => faucet?.()}
-                            variant="outline"
-                            className="hidden md:flex items-center gap-2 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-widest h-10 px-6 rounded-none"
-                        >
-                            <Zap className="h-3 w-3" />
-                            Mint_Test_USDT
-                        </Button>
-                        <Link
-                            href="https://testnet.binance.org/faucet-smart"
-                            target="_blank"
-                            className="hidden md:flex items-center justify-center gap-2 border border-white/10 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest h-10 px-6"
-                        >
-                            <ExternalLink className="h-3 w-3" />
-                            Gas_Refuel
-                        </Link>
+                        <NotificationBell
+                            unreadCount={unreadCount}
+                            onClick={togglePanel}
+                            pulse={unreadCount > 0}
+                        />
                         <div className="hidden lg:flex flex-col items-end px-4 border-r border-white/10">
                             <span className="text-[8px] font-bold text-white/20 uppercase tracking-tighter">Global_Network_Latency</span>
                             <span className="text-[10px] font-mono font-bold text-emerald-500">{latency}ms</span>
@@ -273,94 +269,6 @@ function CashDashboardContent() {
                     </Card>
                 </div>
 
-                {/* Wallet Switch Matrix */}
-                <div className="space-y-6">
-                    <div className="flex items-center gap-3">
-                        <div className="h-2 w-2 rounded-full bg-emerald-500" />
-                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40">WALLET_SWITCH_MATRIX</h2>
-                    </div>
-
-                    <Card className="bg-black/40 backdrop-blur-xl border border-white/5 rounded-none overflow-hidden">
-                        <CardContent className="p-8 space-y-6">
-                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white/40">
-                                        <Wallet className="h-4 w-4 text-emerald-400" />
-                                        Active Wallet
-                                    </div>
-                                    <div className="text-lg font-mono font-bold text-white">
-                                        {activeWallet ? formatWallet(activeWallet) : "No wallet connected"}
-                                    </div>
-                                    <div className="text-[10px] text-white/30 font-medium max-w-md">
-                                        Connect multiple wallets and switch instantly without leaving the dashboard.
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col sm:flex-row gap-3">
-                                    <Button
-                                        onClick={() => (isConnected ? switchWallet() : connect("Other"))}
-                                        className="h-10 px-5 bg-emerald-500 hover:bg-emerald-400 text-black text-[10px] font-black uppercase tracking-widest rounded-none"
-                                        disabled={isSwitchingWallet}
-                                    >
-                                        <Plus className="h-3 w-3 mr-2" />
-                                        Connect Another
-                                    </Button>
-                                    <Button
-                                        onClick={() => switchWallet()}
-                                        variant="outline"
-                                        className="h-10 px-5 border-white/10 text-white/60 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-none"
-                                        disabled={isSwitchingWallet || !activeWallet}
-                                    >
-                                        <Repeat className="h-3 w-3 mr-2" />
-                                        Switch Wallet
-                                    </Button>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {walletList.length === 0 ? (
-                                    <div className="border border-white/10 bg-white/[0.02] p-4 text-[10px] text-white/30 uppercase tracking-widest">
-                                        No wallet profiles connected yet.
-                                    </div>
-                                ) : (
-                                    walletList.map((walletAddress) => {
-                                        const isActive = activeWallet?.toLowerCase() === walletAddress.toLowerCase();
-                                        return (
-                                            <div key={walletAddress} className="border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between">
-                                                <div className="space-y-1">
-                                                    <div className="text-[9px] font-black uppercase tracking-widest text-white/30">Wallet Address</div>
-                                                    <div className="text-sm font-mono font-bold text-white">{formatWallet(walletAddress)}</div>
-                                                </div>
-                                                {isActive ? (
-                                                    <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-emerald-400">
-                                                        <CheckCircle2 className="h-3 w-3" />
-                                                        Active
-                                                    </div>
-                                                ) : (
-                                                    <Button
-                                                        onClick={() => switchWallet(walletAddress)}
-                                                        className="h-9 px-4 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-none"
-                                                        disabled={isSwitchingWallet}
-                                                    >
-                                                        <Repeat className="h-3 w-3 mr-2" />
-                                                        Switch
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-
-                            {isSwitchingWallet && (
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                                    <Repeat className="h-3 w-3 animate-spin" />
-                                    Switching in progress - confirm the account inside your wallet.
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
 
                 {/* Earnings Nexus Chart */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

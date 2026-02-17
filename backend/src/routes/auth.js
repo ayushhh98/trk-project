@@ -9,6 +9,7 @@ const { generateDeviceFingerprint } = require('../utils/fingerprint');
 const auth = require('../middleware/auth');
 const { sendOtpEmail, sendPasswordResetOtpEmail } = require('../utils/email');
 const { OAuth2Client } = require('google-auth-library');
+const { awardReferralSignupBonus } = require('../utils/referralBonus');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -56,42 +57,16 @@ const maybeUpgradeRole = async (user, identity) => {
 const PRACTICE_LOGIN_BONUS = Number(process.env.PRACTICE_LOGIN_BONUS || 100);
 const PRACTICE_LOGIN_DAYS = Number(process.env.PRACTICE_LOGIN_DAYS || 30);
 
+const getPracticeBonus = () => (Number.isFinite(PRACTICE_LOGIN_BONUS) ? PRACTICE_LOGIN_BONUS : 100);
+const getPracticeDurationDays = () => (Number.isFinite(PRACTICE_LOGIN_DAYS) ? PRACTICE_LOGIN_DAYS : 30);
+const getPracticeExpiryDate = () => new Date(Date.now() + getPracticeDurationDays() * 24 * 60 * 60 * 1000);
+
 const applyPracticeLoginState = (user) => {
     let changed = false;
-    const now = new Date();
-    const bonus = Number.isFinite(PRACTICE_LOGIN_BONUS) ? PRACTICE_LOGIN_BONUS : 100;
-    const durationDays = Number.isFinite(PRACTICE_LOGIN_DAYS) ? PRACTICE_LOGIN_DAYS : 30;
-    const PRACTICE_USER_LIMIT = 100000;
 
-    // Check if practice rewards are still available
-    // We do this check only if we are about to credit a new bonus (currentPractice < bonus)
-    // For existing users who already have it, we just refresh expiry.
-    const currentPractice = typeof user.practiceBalance === 'number' ? user.practiceBalance : 0;
-
-    // Refresh expiry if needed (for everyone, or just those with balance?)
-    // Requirement says "Limited to first 100,000 practice-activated users"
-    // We'll interpret this as: New allocations stop after 100k users have > 0 practice balance.
-
-    if (!user.practiceExpiry || new Date(user.practiceExpiry) < now) {
-        user.practiceExpiry = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    if (!user.practiceExpiry || Number.isNaN(new Date(user.practiceExpiry).getTime())) {
+        user.practiceExpiry = getPracticeExpiryDate();
         changed = true;
-    }
-
-    if (currentPractice < bonus) {
-        // Only top up if limit not reached
-        // This is a "lazy" check on login. Ideally we'd check total count of users with practiceBalance > 0
-        // But doing a count query on every login might be heavy. 
-        // We'll assume "practice-activated" means "Signed up". 
-        // Let's check user ID creation time or simply total user count?
-        // Simpler: Check if global count > 100k.
-        // For now, let's just implement the logic to allow us to toggle it or use a env var, 
-        // but since we can't easily count "practice users" efficiently here without async, 
-        // we might need to move this logic to the route handler or make this async.
-        // However, this function is sync in current code. 
-
-        // REFACTOR: This function needs to be async to count users
-        // But it is called in synchronous contexts in the code above (lines 201, 627, 739)
-        // I will modify those calls to be async first.
     }
 
     return changed;
@@ -133,20 +108,33 @@ router.post('/nonce', async (req, res) => {
 
             // Create new user
             const role = resolveRoleForIdentity({ walletAddress: address });
+            // Check if 100,000 practice users limit reached
+            const practiceUserCount = await User.countDocuments({ practiceBalance: { $gt: 0 } });
+            const bonusAmount = practiceUserCount < 100000 ? getPracticeBonus() : 0;
+
             user = new User({
                 walletAddress: address,
                 nonce: Math.floor(Math.random() * 1000000).toString(),
                 referredBy: referredBy,
-                role: role || 'player'
+                role: role || 'player',
+                practiceBalance: bonusAmount,
+                practiceExpiry: bonusAmount > 0 ? getPracticeExpiryDate() : null
             });
             await user.save();
 
-            // Link to referrer's list if applicable
             if (referredBy) {
-                await User.findByIdAndUpdate(referredBy, {
-                    $addToSet: { referrals: user._id },
-                    $inc: { 'teamStats.totalMembers': 1 }
+                const io = req.app.get('io');
+                await awardReferralSignupBonus({
+                    referrerId: referredBy,
+                    referredUserId: user._id,
+                    io
                 });
+
+                // Trigger Practice Referral Rewards (if bonus was given)
+                if (bonusAmount > 0) {
+                    const { distributePracticeRewards } = require('../utils/incomeDistributor');
+                    await distributePracticeRewards(user._id, referredBy);
+                }
             }
         } else {
             // Generate new nonce
@@ -266,6 +254,7 @@ router.post('/verify', async (req, res) => {
                     practiceBalance: user.practiceBalance,
                     realBalances: user.realBalances,
                     referralCode: user.referralCode,
+                    referredBy: user.referredBy,
                     clubRank: user.clubRank,
                     role: user.role,
                     isBanned: user.isBanned,
@@ -457,13 +446,19 @@ router.post('/register', async (req, res) => {
         }
 
         const role = resolveRoleForIdentity({ email });
+        // Check if 100,000 practice users limit reached
+        const practiceUserCount = await User.countDocuments({ practiceBalance: { $gt: 0 } });
+        const bonusAmount = practiceUserCount < 100000 ? getPracticeBonus() : 0;
+
         user = new User({
             email: email.toLowerCase(),
             password,
             emailOtp: otp,
             emailOtpExpires: otpExpires,
             referredBy,
-            role: role || 'player'
+            role: role || 'player',
+            practiceBalance: bonusAmount,
+            practiceExpiry: bonusAmount > 0 ? getPracticeExpiryDate() : null
         });
 
         const generateReferralCode = (mail) => {
@@ -480,6 +475,20 @@ router.post('/register', async (req, res) => {
                 if (!user.referralCode) user.referralCode = generateReferralCode(email);
                 await user.save();
                 saved = true;
+
+                // POST-SAVE: Handle Referrer Linkage & Practice Rewards
+                if (referredBy) {
+                    await User.findByIdAndUpdate(referredBy, {
+                        $addToSet: { referrals: user._id },
+                        $inc: { 'teamStats.totalMembers': 1 }
+                    });
+
+                    // Trigger Practice Referral Rewards (if bonus was given)
+                    if (bonusAmount > 0) {
+                        const { distributePracticeRewards } = require('../utils/incomeDistributor');
+                        await distributePracticeRewards(user._id, referredBy);
+                    }
+                }
             } catch (err) {
                 if (err?.code === 11000 && err?.keyPattern?.referralCode) {
                     user.referralCode = generateReferralCode(email);
@@ -495,6 +504,20 @@ router.post('/register', async (req, res) => {
 
         if (!saved) {
             return res.status(500).json({ status: 'error', message: 'Registration failed. Please try again.' });
+        }
+
+        if (referredBy) {
+            const io = req.app.get('io');
+            await awardReferralSignupBonus({
+                referrerId: referredBy,
+                referredUserId: user._id,
+                io
+            });
+
+            if (bonusAmount > 0) {
+                const { distributePracticeRewards } = require('../utils/incomeDistributor');
+                await distributePracticeRewards(user._id, referredBy);
+            }
         }
 
         // Send real OTP email
@@ -684,8 +707,10 @@ router.post('/login-email', async (req, res) => {
                     email: user.email,
                     walletAddress: user.walletAddress,
                     practiceBalance: user.practiceBalance,
+                    practiceExpiry: user.practiceExpiry,
                     realBalances: user.realBalances,
                     referralCode: user.referralCode,
+                    referredBy: user.referredBy,
                     isRegisteredOnChain: user.isRegisteredOnChain,
                     role: user.role,
                     isBanned: user.isBanned,
@@ -728,15 +753,25 @@ router.post('/google', async (req, res) => {
         if (!user) {
             // New user from Google
             const role = resolveRoleForIdentity({ email });
+
+            // Check if 100,000 practice users limit reached
+            const practiceUserCount = await User.countDocuments({ practiceBalance: { $gt: 0 } });
+            const bonusAmount = practiceUserCount < 100000 ? getPracticeBonus() : 0;
+
             user = new User({
                 email: email.toLowerCase(),
                 googleId: googleId,
                 name: name,
                 picture: picture,
                 isEmailVerified: true, // Google emails are already verified
-                role: role || 'player'
+                role: role || 'player',
+                practiceBalance: bonusAmount,
+                practiceExpiry: bonusAmount > 0 ? getPracticeExpiryDate() : null
             });
             await user.save();
+
+            // Link to referrer if code was present during OAuth flow (not yet implemented in current OAuth logic but adding hook)
+            // Note: In current Google flow, referrerCode would need to be passed in session/state
         } else {
             // Existing user - link Google ID if not already set
             let updated = false;
@@ -796,8 +831,10 @@ router.post('/google', async (req, res) => {
                     email: user.email,
                     walletAddress: user.walletAddress,
                     practiceBalance: user.practiceBalance,
+                    practiceExpiry: user.practiceExpiry,
                     realBalances: user.realBalances,
                     referralCode: user.referralCode,
+                    referredBy: user.referredBy,
                     isRegisteredOnChain: user.isRegisteredOnChain,
                     role: user.role,
                     isBanned: user.isBanned,

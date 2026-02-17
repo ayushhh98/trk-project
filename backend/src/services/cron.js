@@ -31,10 +31,10 @@ const startCronJobs = (io) => {
             }
 
             // B. CASHBACK: Phase-based and Capping-based distribution
-            const activeUsersCount = await User.countDocuments({ isActive: true });
+            const activationCount = await User.countDocuments({ 'activation.tier': { $ne: 'none' } });
             let cashbackRate = 0.005; // Phase 1: 0.5%
-            if (activeUsersCount > 100000) cashbackRate = 0.004; // Phase 2: 0.4%
-            if (activeUsersCount > 1000000) cashbackRate = 0.0033; // Phase 3: 0.33%
+            if (activationCount > 100000) cashbackRate = 0.004; // Phase 2: 0.4%
+            if (activationCount > 1000000) cashbackRate = 0.0033; // Phase 3: 0.33%
 
             const users = await User.find({
                 'activation.cashbackActive': true,
@@ -43,22 +43,36 @@ const startCronJobs = (io) => {
             });
 
             for (const user of users) {
+                // Referral Qualification: Each referral must have 100+ USDT real volume OR 100+ USDT deposit
+                // "each referred user maintains a minimum trading/deposit volume of 100 USDT"
+                const qualifiedRefs = await User.countDocuments({
+                    _id: { $in: user.referrals || [] },
+                    $or: [
+                        { 'activation.totalRealVolume': { $gte: 100 } },
+                        { 'activation.totalDeposited': { $gte: 100 } }
+                    ]
+                });
+
                 // Tier Benefits for Capping
                 // Tier 1: 100% cap (0 refs)
                 // Tier 2: 200% cap (5 refs)
-                // Tier 3: 400% cap (10 refs)
-                // Tier 4: 800% cap (20 refs)
-                const refsCount = user.referrals?.length || 0;
+                // Tier 3: 400% cap (10 refs) -> Down to 300% after 1Lakh users
+                // Tier 4: 800% cap (20 refs) -> Down to 400% after 1Lakh users
                 let capMultiplier = 1;
-                if (refsCount >= 20) capMultiplier = 8;
-                else if (refsCount >= 10) capMultiplier = 4;
-                else if (refsCount >= 5) capMultiplier = 2;
+                if (qualifiedRefs >= 20) {
+                    capMultiplier = activationCount > 100000 ? 4 : 8;
+                } else if (qualifiedRefs >= 10) {
+                    capMultiplier = activationCount > 100000 ? 3 : 4;
+                } else if (qualifiedRefs >= 5) {
+                    capMultiplier = 2;
+                }
 
                 const maxRecovery = user.activation.totalDeposited * capMultiplier;
 
+                // Re-deposit check: "earnings pause... User must: Re-deposit minimum 100 USDT"
+                // Verify if user has deposited since last cap reached
                 if (user.cashbackStats.totalRecovered >= maxRecovery) {
-                    // Capping reached - Earnings paused until re-deposit
-                    console.log(`User ${user.walletAddress}: Cashback Cap Reached (${maxRecovery} USDT)`);
+                    console.log(`User ${user.walletAddress}: Cashback Cap Reached (${maxRecovery} USDT). Awaiting 100+ USDT re-deposit.`);
                     continue;
                 }
 
@@ -77,11 +91,11 @@ const startCronJobs = (io) => {
                     user.cashbackStats.todayCashback = dailyCashback; // Basis for ROI on ROI
 
                     // 20% Auto-fund Lucky Draw from Daily Cashback
-                    const luckyDrawFunding = dailyCashback * LUCKY_DRAW_AUTO_PERCENT;
+                    const luckyDrawFunding = dailyCashback * 0.20;
                     const netCashback = dailyCashback - luckyDrawFunding;
 
                     user.realBalances.cashback += netCashback;
-                    user.realBalances.luckyDrawWallet += luckyDrawFunding;
+                    user.realBalances.luckyDrawWallet = (user.realBalances.luckyDrawWallet || 0) + luckyDrawFunding;
 
                     await user.save();
                 }

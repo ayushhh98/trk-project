@@ -48,8 +48,8 @@ const processDailyRoi = async (io) => {
 
                     const totalCommission = poolAmount * ROI_COMMISSION_RATES[currentLevel];
 
-                    // 20% redirection to Lucky Draw Wallet
-                    const luckyCredit = totalCommission * LUCKY_DRAW_AUTO_PERCENT;
+                    // 20% redirection to Lucky Draw Wallet (from daily cashback ROI earnings)
+                    const luckyCredit = totalCommission * 0.20;
                     const netRoiCredit = totalCommission - luckyCredit;
 
                     // Update balances

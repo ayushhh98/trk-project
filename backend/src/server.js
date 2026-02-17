@@ -41,6 +41,7 @@ const luckyDrawRoutes = require('./routes/luckyDraw');
 const adminRoutes = require('./routes/admin');
 const auditRoutes = require('./routes/audit');
 const contentRoutes = require('./routes/content');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 const server = http.createServer(app);
@@ -176,6 +177,7 @@ app.use('/api/roi-on-roi', roiOnRoiRoutes);
 app.use('/api/club', clubRoutes);
 app.use('/api/lucky-draw', luckyDrawRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Initialize jackpot service with Socket.IO
 luckyDrawRoutes.initializeService(io);
