@@ -20,13 +20,15 @@ import { PromoPoster } from "@/components/dashboard/PromoPoster";
 import { LaunchPoster } from "@/components/dashboard/LaunchPoster";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { IncomeModuleCard } from "@/components/dashboard/IncomeModuleCard";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, User } from "lucide-react";
 import { LiveWinnerFeed } from "@/components/jackpot/LiveWinnerFeed";
 import { PromoCarousel } from "@/components/dashboard/PromoCarousel";
+import { ProfileModal } from "@/components/dashboard/ProfileModal";
 import { contentAPI } from "@/lib/api";
 import { BalanceAnimator } from "@/components/cash/BalanceAnimator";
 import { ConfettiEffect } from "@/components/effects/ConfettiEffect";
 import { toast } from "sonner";
+import { dedupeByKey } from "@/lib/collections";
 
 
 export default function DashboardPage() {
@@ -59,10 +61,12 @@ export default function DashboardPage() {
         try {
             const res = await contentAPI.getPosters();
             if (res.status === 'success') {
-                setPosters(res.data);
+                const incoming = Array.isArray(res.data) ? res.data : [];
+                setPosters(dedupeByKey(incoming, (p) => p?._id || p?.type));
             }
         } catch (error) {
             console.error("Failed to fetch posters:", error);
+            setPosters([]);
         }
     };
 
@@ -97,28 +101,13 @@ export default function DashboardPage() {
         }
     };
 
-    const promoPoster = posters.find(p => p.type === 'promo') || {
-        title: "Become The Protocol Owner",
-        description: "Unlock governance rights, revenue sharing, and elite tier withdrawal limits.",
-        link: "/dashboard"
-    };
-
-    const launchPoster = posters.find(p => p.type === 'launch') || {
-        title: "Lucky Draw Jackpot",
-        description: "Enter the next draw and secure a share of the protocol prize pool.",
-        link: "/dashboard/lucky-draw",
-        stats: [
-            { label: "Prize Pool", value: "$25,000" },
-            { label: "Tickets", value: "Unlimited" },
-            { label: "Draw", value: "Daily" }
-        ]
-    };
+    const promoPoster = posters.find(p => p.type === 'promo');
+    const launchPoster = posters.find(p => p.type === 'launch');
 
     return (
         <div className="bg-transparent pb-32">
             <ConfettiEffect />
             <main className="container mx-auto px-4 py-6 space-y-8">
-
                 {/* Simplified Header */}
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -132,22 +121,31 @@ export default function DashboardPage() {
                     )} />
 
                     <div className="relative z-10 p-8">
-                        {/* Top Row: Title + Mode Toggle + Actions */}
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
-                            <div>
-                                <div className={cn(
-                                    "inline-flex items-center gap-2 px-3 py-1 rounded-full border text-[10px] font-black tracking-widest uppercase mb-3",
-                                    isRealMode
-                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
-                                        : "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
-                                )}>
-                                    <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isRealMode ? "bg-amber-500" : "bg-emerald-500")} />
-                                    Dashboard
+                            <div className="flex items-start gap-4">
+                                <div>
+                                    <div className={cn(
+                                        "inline-flex items-center gap-2 px-3 py-1 rounded-full border text-[10px] font-black tracking-widest uppercase mb-3",
+                                        isRealMode
+                                            ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                                            : "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
+                                    )}>
+                                        <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isRealMode ? "bg-amber-500" : "bg-emerald-500")} />
+                                        Dashboard
+                                    </div>
+                                    <h1 className="text-4xl lg:text-5xl font-display font-black text-white tracking-tight">
+                                        Welcome Back
+                                    </h1>
+                                    <div className="flex items-center gap-3 mt-2">
+                                        <p className="text-white/50">{displayAddress}</p>
+                                        <ProfileModal asChild>
+                                            <button className="px-3 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest text-white/60 hover:text-white transition-colors flex items-center gap-1.5">
+                                                <User className="h-3 w-3" />
+                                                Profile
+                                            </button>
+                                        </ProfileModal>
+                                    </div>
                                 </div>
-                                <h1 className="text-4xl lg:text-5xl font-display font-black text-white tracking-tight">
-                                    Welcome Back
-                                </h1>
-                                <p className="text-white/50 mt-2">{displayAddress}</p>
                             </div>
 
                             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
@@ -203,7 +201,7 @@ export default function DashboardPage() {
                                     </div>
                                     <div className="flex items-baseline gap-2">
                                         <BalanceAnimator
-                                            balance={isRealMode ? (realBalances.totalUnified || 0) : parseFloat(practiceBalance)}
+                                            balance={isRealMode ? ((realBalances.cash || 0) + (realBalances.game || 0)).toFixed(2) : parseFloat(practiceBalance?.toString() || "0").toFixed(2)}
                                             className="text-4xl font-mono font-bold text-white tracking-tight"
                                             suffix=""
                                         />
@@ -217,59 +215,64 @@ export default function DashboardPage() {
                     </div>
                 </motion.div>
 
+
                 {/* Real Money Unlock Banner */}
-                {!hasRealAccess && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="rounded-2xl overflow-hidden bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 p-6 flex flex-col md:flex-row items-center justify-between gap-4"
-                    >
-                        <div className="flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-                                <ShieldCheck className="h-6 w-6 text-amber-500 animate-pulse" />
-                            </div>
-                            <div>
-                                <div className="text-sm font-black text-white">Unlock Real Money Mode</div>
-                                <p className="text-xs text-white/60">Make your first deposit to start earning real rewards.</p>
-                            </div>
-                        </div>
-                        <Button
-                            onClick={() => setIsDepositOpen(true)}
-                            className="bg-amber-500 text-black hover:bg-amber-400 font-black uppercase text-xs px-6 h-10 rounded-xl whitespace-nowrap"
+                {
+                    !hasRealAccess && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="rounded-2xl overflow-hidden bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 p-6 flex flex-col md:flex-row items-center justify-between gap-4"
                         >
-                            <Wallet className="h-4 w-4 mr-2" />
-                            Make Deposit
-                        </Button>
-                    </motion.div>
-                )}
+                            <div className="flex items-center gap-4">
+                                <div className="h-12 w-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+                                    <ShieldCheck className="h-6 w-6 text-amber-500 animate-pulse" />
+                                </div>
+                                <div>
+                                    <div className="text-sm font-black text-white">Unlock Real Money Mode</div>
+                                    <p className="text-xs text-white/60">Make your first deposit to start earning real rewards.</p>
+                                </div>
+                            </div>
+                            <Button
+                                onClick={() => setIsDepositOpen(true)}
+                                className="bg-amber-500 text-black hover:bg-amber-400 font-black uppercase text-xs px-6 h-10 rounded-xl whitespace-nowrap"
+                            >
+                                <Wallet className="h-4 w-4 mr-2" />
+                                Make Deposit
+                            </Button>
+                        </motion.div>
+                    )
+                }
 
                 {/* Low USDT Balance Banner (Sequential to the screenshot provided) */}
-                {hasRealAccess && (realBalances.grandTotal || 0) < 5 && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="rounded-2xl overflow-hidden bg-red-500/10 border border-red-500/20 p-4 flex items-center justify-between gap-4 mb-6"
-                    >
-                        <div className="flex items-center gap-4">
-                            <div className="h-10 w-10 rounded-xl bg-red-500/20 flex items-center justify-center">
-                                <AlertTriangle className="h-5 w-5 text-red-500" />
-                            </div>
-                            <div>
-                                <div className="text-sm font-black text-red-500">Low Ecosystem Balance</div>
-                                <p className="text-xs text-white/50">Total Assets: {(realBalances.grandTotal || 0).toFixed(2)} USDT. Minimum 5 USDT recommended for play.</p>
-                            </div>
-                        </div>
-                        <Link
-                            href="https://pancakeswap.finance/swap?outputCurrency=0x55d398326f99059fF775485246999027B3197955&chain=bsc"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                {
+                    hasRealAccess && (realBalances.grandTotal || 0) < 5 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="rounded-2xl overflow-hidden bg-red-500/10 border border-red-500/20 p-4 flex items-center justify-between gap-4 mb-6"
                         >
-                            <Button className="bg-red-600 text-white hover:bg-red-700 font-black uppercase text-xs px-6 h-10 rounded-xl whitespace-nowrap">
-                                GET USDT
-                            </Button>
-                        </Link>
-                    </motion.div>
-                )}
+                            <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+                                    <AlertTriangle className="h-5 w-5 text-red-500" />
+                                </div>
+                                <div>
+                                    <div className="text-sm font-black text-red-500">Low Ecosystem Balance</div>
+                                    <p className="text-xs text-white/50">Total Assets: {(realBalances.grandTotal || 0).toFixed(2)} USDT. Minimum 5 USDT recommended for play.</p>
+                                </div>
+                            </div>
+                            <Link
+                                href="https://pancakeswap.finance/swap?outputCurrency=0x55d398326f99059fF775485246999027B3197955&chain=bsc"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                <Button className="bg-red-600 text-white hover:bg-red-700 font-black uppercase text-xs px-6 h-10 rounded-xl whitespace-nowrap">
+                                    GET USDT
+                                </Button>
+                            </Link>
+                        </motion.div>
+                    )
+                }
 
                 {/* Hero Section: Game CTA + Protocol Owner */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -278,11 +281,11 @@ export default function DashboardPage() {
                         {/* Promotional Carousel */}
                         <PromoCarousel />
                         <LaunchPoster
-                            title={launchPoster.title}
-                            description={launchPoster.description}
-                            link={launchPoster.link}
-                            stats={launchPoster.stats}
-                            imageUrl={launchPoster.imageUrl}
+                            title={launchPoster?.title}
+                            description={launchPoster?.description}
+                            link={launchPoster?.link}
+                            stats={launchPoster?.stats}
+                            imageUrl={launchPoster?.imageUrl}
                         />
                     </div>
 
@@ -293,10 +296,10 @@ export default function DashboardPage() {
                         className="lg:col-span-1"
                     >
                         <PromoPoster
-                            title={promoPoster.title}
-                            description={promoPoster.description}
-                            link={promoPoster.link}
-                            imageUrl={promoPoster.imageUrl}
+                            title={promoPoster?.title}
+                            description={promoPoster?.description}
+                            link={promoPoster?.link}
+                            imageUrl={promoPoster?.imageUrl}
                         />
                     </motion.div>
                 </div>
@@ -319,7 +322,7 @@ export default function DashboardPage() {
                     >
                         <StatCard
                             title="Total Balance"
-                            value={`${isRealMode ? (realBalances.totalUnified || 0).toFixed(2) : practiceBalance} USDT`}
+                            value={`${isRealMode ? (realBalances.totalUnified || 0).toFixed(2) : parseFloat(practiceBalance?.toString() || "0").toFixed(2)} USDT`}
                             subtitle={isRealMode ? "Real Money" : "Practice Mode"}
                             icon={Wallet}
                             color={isRealMode ? "amber" : "emerald"}
@@ -480,7 +483,7 @@ export default function DashboardPage() {
                         <LuckyDraw />
                     </div>
                 </motion.div>
-            </main>
+            </main >
 
             {/* Modals */}
             <DepositModal
@@ -497,3 +500,4 @@ export default function DashboardPage() {
         </div>
     );
 }
+

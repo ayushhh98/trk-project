@@ -21,10 +21,15 @@ export default function AuthPage() {
             return;
         }
 
+        if (user.role === "player" && !user.referredBy) {
+            // Stay on auth until referral is completed.
+            return;
+        }
+
         didRedirectRef.current = true;
 
         // Redirect to home join gate after wallet login
-        router.replace("/#join");
+        router.replace("/dashboard");
     }, [token, user, refreshUser, router]);
 
     return (

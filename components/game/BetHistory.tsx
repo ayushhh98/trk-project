@@ -15,14 +15,15 @@ import {
     CheckCircle2,
     XCircle,
     Calendar,
-    BrainCircuit
+    BrainCircuit,
+    HelpCircle
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { formatDistanceToNow } from "date-fns";
 
 interface HistoryItem {
     id: string;
-    gameType: 'dice' | 'crash' | 'spin' | 'mines' | 'plinko' | 'matrix';
+    gameType: 'dice' | 'crash' | 'spin' | 'mines' | 'plinko' | 'matrix' | 'guess';
     amount: number;
     prediction: string | number;
     won: boolean;
@@ -46,6 +47,7 @@ const gameIcons = {
     mines: { icon: Gem, color: 'text-amber-500' },
     plinko: { icon: LayoutGrid, color: 'text-cyan-500' },
     matrix: { icon: BrainCircuit, color: 'text-indigo-500' },
+    guess: { icon: HelpCircle, color: 'text-pink-500' },
 };
 
 export function BetHistory({ history, className, onLoadMore, hasMore = false, isLoadingMore = false }: BetHistoryProps) {

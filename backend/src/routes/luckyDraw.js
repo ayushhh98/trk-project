@@ -3,6 +3,7 @@ const User = require('../models/User');
 const auth = require('../middleware/auth');
 const { requireAdmin, requireSuperAdmin } = require('../middleware/rbac');
 const JackpotService = require('../services/jackpotService');
+const system = require('../config/system');
 
 const router = express.Router();
 
@@ -40,7 +41,7 @@ router.get('/status', async (req, res) => {
             status: 'success',
             data: {
                 ...status,
-                drawIsActive: status.isActive,
+                drawIsActive: status.isActive && !system.get().emergencyFlags.pauseLuckyDraw,
                 totalSurplus: 0 // Surplus only visible to admins
             }
         });
@@ -104,6 +105,11 @@ router.get('/recent-winners', async (req, res) => {
  */
 router.post('/buy-ticket', auth, async (req, res) => {
     try {
+        const { systemConfig } = require('../utils/globalConfig');
+        if (systemConfig.emergencyFlags.pauseLuckyDraw) {
+            return res.status(503).json({ status: 'error', message: 'Lucky Draw is currently paused.' });
+        }
+
         if (!jackpotService) {
             return res.status(503).json({
                 status: 'error',

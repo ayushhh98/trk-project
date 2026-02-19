@@ -3,6 +3,7 @@
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getWagmiConfig, projectId } from "@/config/wagmi";
+import { getApiBase } from "@/lib/api";
 import { ReactNode, useState, createContext, useContext, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
 
@@ -55,10 +56,10 @@ export const useSocket = () => useContext(SocketContext);
 
 export let socket: Socket | null = null;
 
-export function Web3Provider({ children }: { children: ReactNode }) {
+export function Web3Provider({ children, initialState }: { children: ReactNode, initialState?: any }) {
     const [queryClient] = useState(() => new QueryClient());
     const [wagmiConfig] = useState(() => getWagmiConfig());
-    const [socketReady, setSocketReady] = useState(false);
+    const [socketState, setSocketState] = useState<Socket | null>(null);
 
     useEffect(() => {
         const originalWarn = console.warn;
@@ -72,7 +73,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
             originalWarn(...args);
         };
 
-        const socketUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || "http://localhost:5000";
+        const socketUrl = getApiBase() || "http://localhost:5000";
+
+        if (socket) {
+            setSocketState(socket);
+        }
 
         if (!socket) {
             socket = io(socketUrl, {
@@ -86,10 +91,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
                     cb({ token });
                 }
             });
+            setSocketState(socket);
 
             socket.on("connect", () => {
                 console.log("🔌 Connected to Real-Time Feed:", socket?.id);
-                setSocketReady(true);
             });
 
             socket.on("connect_error", (err) => {
@@ -142,18 +147,15 @@ export function Web3Provider({ children }: { children: ReactNode }) {
             if (socket) {
                 socket.close();
                 socket = null;
+                setSocketState(null);
             }
         };
     }, []);
 
-    // Also update when the local user state changes (handled by WalletProvider usually)
-    // For now, let's just rely on the mount token and storage event.
-    // If the user logs in, WalletProvider will set the token and we might need a refresh.
-
     return (
-        <WagmiProvider config={wagmiConfig}>
+        <WagmiProvider config={wagmiConfig} initialState={initialState}>
             <QueryClientProvider client={queryClient}>
-                <SocketContext.Provider value={socket}>
+                <SocketContext.Provider value={socketState}>
                     {children}
                 </SocketContext.Provider>
             </QueryClientProvider>

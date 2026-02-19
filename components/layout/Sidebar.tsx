@@ -21,11 +21,12 @@ import {
     BarChart3,
     Crown
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { Button } from "@/components/ui/Button";
 import { motion, AnimatePresence } from "framer-motion";
 import { Logo } from "@/components/ui/Logo";
+import { ProfileModal } from "@/components/dashboard/ProfileModal";
 
 const menuItems = [
     { name: "Terminal", icon: LayoutDashboard, href: "/dashboard", badge: "Live" },
@@ -45,6 +46,11 @@ export function Sidebar() {
     const router = useRouter();
     const { disconnect, address } = useWallet();
     const [isOpen, setIsOpen] = useState(false);
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     const handleTerminate = async () => {
         try {
@@ -99,7 +105,7 @@ export function Sidebar() {
                     {/* Menu Navigation */}
                     <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar pb-8">
                         {menuItems.map((item) => {
-                            const isActive = pathname === item.href;
+                            const isActive = isMounted && pathname === item.href;
                             return (
                                 <Link
                                     key={item.href}
@@ -158,17 +164,18 @@ export function Sidebar() {
                     </nav>
 
                     <div className="p-6 mt-auto border-t border-white/5 bg-black/40 backdrop-blur-3xl space-y-6">
-                        <Button
-                            variant="ghost"
-                            className="w-full justify-between px-6 py-6 rounded-2xl text-red-500/60 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/10 group transition-all"
-                            onClick={handleTerminate}
-                        >
-                            <div className="flex items-center gap-3">
-                                <LogOut className="h-5 w-5 group-hover:rotate-12 transition-transform" />
-                                <span className="text-xs font-black uppercase tracking-[0.2em]">Log Out</span>
-                            </div>
-                            <X className="h-3 w-3 opacity-30" />
-                        </Button>
+                        <ProfileModal asChild>
+                            <Button
+                                variant="ghost"
+                                className="w-full justify-between px-6 py-6 rounded-2xl text-red-500/60 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/10 group transition-all"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <LogOut className="h-5 w-5 group-hover:rotate-12 transition-transform" />
+                                    <span className="text-xs font-black uppercase tracking-[0.2em]">Profile</span>
+                                </div>
+                                <Activity className="h-3 w-3 opacity-30" />
+                            </Button>
+                        </ProfileModal>
                     </div>
                 </div >
             </aside >

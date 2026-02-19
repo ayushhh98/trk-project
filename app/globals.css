@@ -136,6 +136,7 @@ body {
 /* Toast Container Styling */
 [data-sonner-toaster] {
   font-family: var(--font-sans);
+  z-index: 9999 !important;
 }
 
 [data-sonner-toast] {

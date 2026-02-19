@@ -30,8 +30,12 @@ export function ReferralOnboarding() {
     return (
         <AnimatePresence>
             {showReferralPrompt && (
-                <Dialog open={true} onOpenChange={() => setShowReferralPrompt(false)}>
-                    <DialogContent className="sm:max-w-md bg-black/90 border-emerald-500/20 backdrop-blur-2xl rounded-[2.5rem] p-8 overflow-hidden z-[100]">
+                <Dialog open={true} onOpenChange={() => { }}>
+                    <DialogContent
+                        onPointerDownOutside={(e) => e.preventDefault()}
+                        onEscapeKeyDown={(e) => e.preventDefault()}
+                        className="sm:max-w-md bg-black/90 border-emerald-500/20 backdrop-blur-2xl rounded-[2.5rem] p-8 overflow-hidden z-[100]"
+                    >
                         {/* Decorative Background */}
                         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[100px] pointer-events-none" />
 
@@ -80,12 +84,6 @@ export function ReferralOnboarding() {
                             >
                                 {isLoading ? "Synchronizing..." : "Initialize Onboarding"}
                             </Button>
-                            <button
-                                onClick={() => setShowReferralPrompt(false)}
-                                className="text-[10px] font-black text-white/20 hover:text-white transition-colors uppercase tracking-[0.3em] py-4 w-full text-center"
-                            >
-                                Skip for now
-                            </button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

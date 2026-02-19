@@ -1,7 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { socket } from '@/components/providers/Web3Provider';
+import { useSocket } from '@/components/providers/Web3Provider';
+import { notificationsAPI } from '@/lib/api';
+import { dedupeByKey, mergeUniqueByKey } from '@/lib/collections';
 import { toast } from 'sonner';
 import type { Notification } from '../notifications/NotificationItem';
 
@@ -34,6 +36,7 @@ interface NotificationProviderProps {
 }
 
 export function NotificationProvider({ children, userId }: NotificationProviderProps) {
+    const socket = useSocket();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
@@ -44,17 +47,11 @@ export function NotificationProvider({ children, userId }: NotificationProviderP
 
         setIsLoading(true);
         try {
-            const categoryParam = category && category !== 'all' ? `?category=${category}` : '';
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications${categoryParam}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setNotifications(data.data.notifications);
-                setUnreadCount(data.data.unreadCount);
+            const data = await notificationsAPI.getAll(category);
+            if (data?.status === 'success' && data?.data) {
+                const incoming = Array.isArray(data.data.notifications) ? data.data.notifications : [];
+                setNotifications(dedupeByKey(incoming, (n) => (n?._id) as string));
+                setUnreadCount(Number.isFinite(data.data.unreadCount) ? data.data.unreadCount : 0);
             }
         } catch (error) {
             console.error('Failed to fetch notifications:', error);
@@ -67,18 +64,9 @@ export function NotificationProvider({ children, userId }: NotificationProviderP
         if (!userId) return;
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications/${id}/read`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setUnreadCount(data.data.unreadCount);
-
-                // Update local state
+            const data = await notificationsAPI.markRead(id);
+            if (data?.status === 'success' && data?.data) {
+                setUnreadCount(Number.isFinite(data.data.unreadCount) ? data.data.unreadCount : 0);
                 setNotifications(prev =>
                     prev.map(n => n._id === id ? { ...n, isRead: true } : n)
                 );
@@ -92,14 +80,8 @@ export function NotificationProvider({ children, userId }: NotificationProviderP
         if (!userId) return;
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications/read-all`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-
-            if (response.ok) {
+            const data = await notificationsAPI.markAllRead();
+            if (data?.status === 'success') {
                 setUnreadCount(0);
                 setNotifications(prev =>
                     prev.map(n => ({ ...n, isRead: true }))
@@ -125,9 +107,12 @@ export function NotificationProvider({ children, userId }: NotificationProviderP
     // Socket.IO listener for new notifications
     useEffect(() => {
         if (!userId || !socket) return;
+        const activeSocket = socket;
 
         const handleNotification = (data: { notification: Notification; unreadCount: number }) => {
-            setNotifications(prev => [data.notification, ...prev]);
+            setNotifications(prev =>
+                mergeUniqueByKey([data.notification], prev, (n) => (n?._id) as string)
+            );
             setUnreadCount(data.unreadCount);
 
             // Show toast notification
@@ -141,12 +126,14 @@ export function NotificationProvider({ children, userId }: NotificationProviderP
             // audio.play().catch(() => {});
         };
 
-        socket.on('notification', handleNotification);
+        activeSocket.on('notification', handleNotification);
 
         return () => {
-            socket.off('notification', handleNotification);
+            if (activeSocket) {
+                activeSocket.off('notification', handleNotification);
+            }
         };
-    }, [userId]);
+    }, [userId, socket]);
 
     const value: NotificationContextType = {
         notifications,

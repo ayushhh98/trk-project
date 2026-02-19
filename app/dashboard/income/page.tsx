@@ -105,7 +105,7 @@ export default function IncomePage() {
                 { levels: "Level 3-5", rate: "1.0%" },
                 { levels: "Level 6-15", rate: "0.5%" },
             ],
-            requirement: "Referral node activation required",
+            requirement: "You need 10+ USDT activation and your referral must deposit + activate",
             badge: "TEAM_NODES"
         },
         {

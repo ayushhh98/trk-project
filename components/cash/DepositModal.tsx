@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { X, Wallet, ShieldCheck, ArrowRight } from "lucide-react";
+import { X, Wallet, ShieldCheck, ArrowRight, AlertTriangle } from "lucide-react";
+import { useSocket } from "@/components/providers/Web3Provider";
+import { PausedOverlay } from "@/components/ui/PausedOverlay";
 
 interface DepositModalProps {
     isOpen: boolean;
@@ -17,8 +19,27 @@ export function DepositModal({ isOpen, onClose, onConfirm }: DepositModalProps) 
     const [amount, setAmount] = useState<string>("50");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const socket = useSocket();
+    const [isPaused, setIsPaused] = useState(false);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handlePause = (data: { paused: boolean }) => {
+            setIsPaused(data.paused);
+            // Removed auto-close to show overlay instead
+        };
+
+        socket.on('system:deposits_paused', handlePause);
+        return () => {
+            socket.off('system:deposits_paused', handlePause);
+        };
+    }, [socket]);
+
     const handleConfirm = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isPaused) return;
+
         const numAmount = parseFloat(amount);
         if (isNaN(numAmount) || numAmount <= 0) return;
 
@@ -53,7 +74,8 @@ export function DepositModal({ isOpen, onClose, onConfirm }: DepositModalProps) 
             >
                 <div className="absolute inset-0 bg-amber-500/10 blur-3xl -z-10" />
 
-                <Card className="border-0 bg-[#0A0A0A] ring-1 ring-white/10 rounded-[2rem] overflow-hidden">
+                <Card className="border-0 bg-[#0A0A0A] ring-1 ring-white/10 rounded-[2rem] overflow-hidden relative">
+                    {isPaused && <PausedOverlay title="Deposits Paused" message="Deposits are temporarily suspended by the administrator." />}
                     <div className="relative border-b border-white/5 p-8 flex items-center justify-between overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 to-transparent pointer-events-none" />
 
@@ -120,8 +142,8 @@ export function DepositModal({ isOpen, onClose, onConfirm }: DepositModalProps) 
 
                         <Button
                             onClick={handleConfirm}
-                            disabled={isSubmitting || !amount || parseFloat(amount) <= 0}
-                            className="w-full h-16 bg-amber-500 text-black hover:bg-amber-400 font-black uppercase tracking-widest text-sm rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.2)] transition-all active:scale-[0.98]"
+                            disabled={isSubmitting || !amount || parseFloat(amount) <= 0 || isPaused}
+                            className={`w-full h-16 bg-amber-500 text-black hover:bg-amber-400 font-black uppercase tracking-widest text-sm rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.2)] transition-all active:scale-[0.98] ${isPaused ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
                         >
                             {isSubmitting ? (
                                 <motion.div
@@ -129,6 +151,10 @@ export function DepositModal({ isOpen, onClose, onConfirm }: DepositModalProps) 
                                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                                     className="h-5 w-5 border-2 border-black/30 border-t-black rounded-full"
                                 />
+                            ) : isPaused ? (
+                                <span className="flex items-center gap-2">
+                                    <AlertTriangle className="h-4 w-4" /> Deposits Paused
+                                </span>
                             ) : (
                                 <span className="flex items-center gap-2">
                                     Initialize Proof of Funds <ArrowRight className="h-4 w-4" />

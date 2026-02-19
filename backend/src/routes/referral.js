@@ -1,11 +1,65 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Commission = require('../models/Commission');
 const auth = require('../middleware/auth');
 const { awardReferralSignupBonus } = require('../utils/referralBonus');
-const { distributePracticeRewards } = require('../utils/incomeDistributor');
+const { distributePracticeReferralBonuses } = require('../utils/practiceBonusDistributor');
 
 const router = express.Router();
+
+// PUBLIC: Validate referral code (no auth required - used before wallet connection)
+router.post('/validate', async (req, res) => {
+    try {
+        const { referralCode } = req.body;
+
+        if (!referralCode || typeof referralCode !== 'string') {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Referral code is required'
+            });
+        }
+
+        // Normalize code (uppercase, trim)
+        const normalizedCode = referralCode.trim().toUpperCase();
+
+        // Check if referral code exists
+        const referrer = await User.findOne({ referralCode: normalizedCode })
+            .select('walletAddress email referralCode')
+            .lean();
+
+        if (!referrer) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Invalid referral code',
+                valid: false
+            });
+        }
+
+        // Return success with referrer info (masked for privacy)
+        const maskedAddress = referrer.walletAddress
+            ? `${referrer.walletAddress.slice(0, 6)}...${referrer.walletAddress.slice(-4)}`
+            : null;
+
+        return res.json({
+            status: 'success',
+            message: 'Valid referral code',
+            valid: true,
+            referrer: {
+                address: maskedAddress,
+                code: referrer.referralCode
+            }
+        });
+
+    } catch (error) {
+        console.error('Referral validation error:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to validate referral code'
+        });
+    }
+});
+
 
 // Administrative Mock State for Practice Referral Rates (kept for reference/admin control)
 let PRACTICE_REFERRAL_RATES = {
@@ -17,6 +71,8 @@ let PRACTICE_REFERRAL_RATES = {
     '51-100': { percent: 0.10, usdt: 0.10 }
 };
 
+const REAL_REFERRAL_COMMISSION_TYPES = ['deposit_commission'];
+
 const getRateByLevel = (level) => {
     if (level === 1) return PRACTICE_REFERRAL_RATES[1];
     if (level >= 2 && level <= 5) return PRACTICE_REFERRAL_RATES['2-5'];
@@ -27,7 +83,7 @@ const getRateByLevel = (level) => {
     return { percent: 0, usdt: 0 };
 };
 
-// Efficient BFS-based team calculation
+// Efficient BFS-based team calculation with Real Commission Data
 const getTeamStatsRealTime = async (userId, maxLevels = 100) => {
     const stats = {
         totalMembers: 0,
@@ -40,6 +96,38 @@ const getTeamStatsRealTime = async (userId, maxLevels = 100) => {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
+    // 1. Fetch Real Commission Data Aggregated by Level AND Type
+    const commissionStats = await Commission.aggregate([
+        {
+            $match: {
+                user: new mongoose.Types.ObjectId(userId),
+                status: 'credited',
+                type: { $in: REAL_REFERRAL_COMMISSION_TYPES }
+            }
+        },
+        {
+            $group: {
+                _id: { level: "$level", type: "$type" },
+                totalEarned: { $sum: "$amount" }
+            }
+        }
+    ]);
+
+    // Create a map for quick lookup: { level: { total: 0, real: 0 } }
+    const earningsMap = {};
+    commissionStats.forEach(stat => {
+        const lvl = stat._id.level;
+        if (!earningsMap[lvl]) earningsMap[lvl] = { total: 0, real: 0 };
+
+        earningsMap[lvl].total += stat.totalEarned;
+
+        // Count as "Real" if NOT a signup bonus
+        if (stat._id.type !== 'signup_bonus') {
+            earningsMap[lvl].real += stat.totalEarned;
+        }
+    });
+
+    // 2. BFS for Member Counts (Structure)
     let currentLevelIds = [userId];
     const visited = new Set();
     visited.add(userId.toString());
@@ -47,17 +135,22 @@ const getTeamStatsRealTime = async (userId, maxLevels = 100) => {
     for (let level = 1; level <= maxLevels; level++) {
         const nextLevelIds = [];
         const rate = getRateByLevel(level);
+
+        // Use real earnings from Commission collection, default to 0
+        const levelEarnings = earningsMap[level] || { total: 0, real: 0 };
+
         const levelData = {
             level,
             members: 0,
             active: 0,
-            reward: rate.usdt,
-            percent: rate.percent,
-            totalEarned: 0
+            reward: rate.usdt, // Static info for UI
+            percent: rate.percent, // Static info for UI
+            totalEarned: levelEarnings.total, // Total (Bonus + Real)
+            realEarned: levelEarnings.real    // Real Cash Only
         };
 
         const members = await User.find({ referredBy: { $in: currentLevelIds } })
-            .select('_id lastLoginAt referralCode referrals walletAddress activation');
+            .select('_id lastLoginAt referralCode referrals walletAddress activation deposits');
 
         if (members.length === 0) break;
 
@@ -66,15 +159,19 @@ const getTeamStatsRealTime = async (userId, maxLevels = 100) => {
             if (visited.has(memberIdStr)) continue;
             visited.add(memberIdStr);
 
+            // "Total Team" Logic: Count ALL signups (active + inactive)
+            // This ensures "Team Size" reflects everyone who joined, fulfilling user request
             levelData.members++;
-            if (member.lastLoginAt && member.lastLoginAt >= startOfDay) {
+
+            // Check active status (online today)
+            const isOnline = member.lastLoginAt && member.lastLoginAt >= startOfDay;
+            if (isOnline) {
                 levelData.active++;
             }
+
             // Track activation tiers
             if (member.activation?.tier === 'tier1') stats.tier1Count++;
             if (member.activation?.tier === 'tier2') stats.tier2Count++;
-
-            levelData.totalEarned += rate.usdt; // Visualization only
 
             nextLevelIds.push(member._id);
         }
@@ -92,25 +189,117 @@ const getTeamStatsRealTime = async (userId, maxLevels = 100) => {
 
 const MAX_DIRECT_REFERRALS = 20;
 
+const getLifetimeCommissionTotal = async (userId, types = []) => {
+    const match = {
+        user: userId,
+        status: 'credited'
+    };
+    if (Array.isArray(types) && types.length > 0) {
+        match.type = { $in: types };
+    }
+
+    const agg = await Commission.aggregate([
+        { $match: match },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+    return agg.length > 0 ? Number(agg[0].total || 0) : 0;
+};
+
 // Get referral stats and growth data (Real-Time)
 router.get('/stats', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ status: 'error', message: 'User not found' });
+        }
 
         // Calculate real-time team stats
         const realStats = await getTeamStatsRealTime(user._id);
 
-        // Calculate real-time total earnings from referral-based streams
-        const totalReferralEarnings =
-            (user.realBalances?.directLevel || 0) +
-            (user.realBalances?.winners || 0) ||
-            user.rewardPoints ||
-            0;
+        // Calculate true lifetime referral earnings from credited commissions only.
+        const referralEarningsAgg = await Commission.aggregate([
+            {
+                $match: {
+                    user: user._id,
+                    status: 'credited',
+                    type: { $in: REAL_REFERRAL_COMMISSION_TYPES }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: "$amount" }
+                }
+            }
+        ]);
+        const totalReferralEarnings = referralEarningsAgg.length > 0 ? referralEarningsAgg[0].total : 0;
+
+        // Claimable on Referral page: direct referral wallet only.
+        // Safety clamp prevents old legacy signup credits from appearing as real cash.
+        const rawDirectBalance = Number(user.realBalances?.directLevel || 0);
+        const lifetimeDirectCommission = await getLifetimeCommissionTotal(user._id, ['deposit_commission']);
+        const claimableReferralBalance =
+            lifetimeDirectCommission > 0
+                ? Math.min(rawDirectBalance, lifetimeDirectCommission)
+                : rawDirectBalance;
+
+        // Calculate TRUE Real Earnings (excluding signup bonuses)
+        const realEarningsAgg = await Commission.aggregate([
+            {
+                $match: {
+                    user: user._id,
+                    status: 'credited',
+                    type: 'deposit_commission'
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: "$amount" }
+                }
+            }
+        ]);
+        const totalRealEarned = realEarningsAgg.length > 0 ? realEarningsAgg[0].total : 0;
 
         // Fetch detailed Level 1 data
         const level1Members = await User.find({ referredBy: user._id })
             .select('walletAddress activation createdAt lastLoginAt name email referralCode deposits')
             .limit(20);
+
+        // Aggregate commissions earned from these specific Level 1 members
+        const level1MemberIds = level1Members.map(m => m._id);
+        const memberEarnings = await Commission.aggregate([
+            {
+                $match: {
+                    user: user._id,
+                    fromUser: { $in: level1MemberIds },
+                    status: 'credited',
+                    type: { $in: REAL_REFERRAL_COMMISSION_TYPES }
+                }
+            },
+            {
+                $group: {
+                    _id: { user: "$fromUser", type: "$type" },
+                    total: { $sum: "$amount" }
+                }
+            }
+        ]);
+
+        const earningsMap = {};
+        memberEarnings.forEach(e => {
+            if (!e._id.user) return; // Skip if no user linked
+            const uid = e._id.user.toString();
+            if (!earningsMap[uid]) earningsMap[uid] = { total: 0, real: 0, bonus: 0 };
+
+            earningsMap[uid].total += e.total;
+
+            if (e._id.type === 'signup_bonus') {
+                earningsMap[uid].bonus += e.total;
+            } else {
+                // deposit_commission, winner_commission, roi_commission
+                earningsMap[uid].real += e.total;
+            }
+        });
 
         const level1Details = level1Members.map(m => {
             const walletShort = m.walletAddress
@@ -127,31 +316,62 @@ router.get('/stats', auth, async (req, res) => {
             // Check online status from global map
             const isOnline = global.onlineUsers ? global.onlineUsers.has(m._id.toString()) : false;
 
+            const earnings = earningsMap[m._id.toString()] || { total: 0, real: 0, bonus: 0 };
+
             return {
                 id: m._id,
                 name: m.name || '',
                 email: maskedEmail,
                 referralCode: m.referralCode || '',
-                address: walletShort,
+                walletAddress: walletShort,
                 tier: m.activation?.tier || 'none',
                 joined: m.createdAt,
                 lastActive: m.lastLoginAt,
-                active: m.lastLoginAt && (new Date() - m.lastLoginAt < 24 * 60 * 60 * 1000),
-                isOnline,
-                totalDeposited
+                totalDeposited,
+                commissionEarned: earnings.total,
+                realCommissionEarned: earnings.real, // NEW: Only performance-based
+                bonusEarned: earnings.bonus,         // NEW: Only signup bonus
+                isOnline
             };
         });
 
-        // Real Growth Data (Mocking last 7 days but can be derived in future)
-        const growthData = [
-            { date: 'Mon', newMembers: 2, volume: 200 },
-            { date: 'Tue', newMembers: 5, volume: 500 },
-            { date: 'Wed', newMembers: 3, volume: 300 },
-            { date: 'Thu', newMembers: 8, volume: 800 },
-            { date: 'Fri', newMembers: 12, volume: 1200 },
-            { date: 'Sat', newMembers: 15, volume: 1500 },
-            { date: 'Sun', newMembers: 10, volume: 1000 }
-        ];
+        // Real Growth Data - Calculate from actual signups in last 7 days
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        // Aggregate daily signups from user's referral tree
+        const dailySignups = await User.aggregate([
+            {
+                $match: {
+                    referredBy: user._id,
+                    createdAt: { $gte: sevenDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                    newMembers: { $sum: 1 },
+                    volume: { $sum: "$activation.totalDeposited" }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        // Fill in missing days with zeros to ensure 7-day chart
+        const growthData = [];
+        for (let i = 0; i < 7; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() - (6 - i));
+            const dateStr = date.toISOString().split('T')[0];
+            const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+
+            const existing = dailySignups.find(d => d._id === dateStr);
+            growthData.push({
+                date: dayName,
+                newMembers: existing?.newMembers || 0,
+                volume: existing?.volume || 0
+            });
+        }
 
         res.status(200).json({
             status: 'success',
@@ -164,6 +384,8 @@ router.get('/stats', auth, async (req, res) => {
                     members: realStats.totalMembers,
                     active: realStats.activeToday,
                     totalEarned: totalReferralEarnings,
+                    claimable: claimableReferralBalance,
+                    realEarned: totalRealEarned,
                     tier1Percent: realStats.totalMembers > 0 ? Math.round((realStats.tier1Count / realStats.totalMembers) * 100) : 0,
                     tier2Percent: realStats.totalMembers > 0 ? Math.round((realStats.tier2Count / realStats.totalMembers) * 100) : 0
                 },
@@ -179,7 +401,11 @@ router.get('/stats', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('Referral Stats Error:', error);
-        res.status(500).json({ status: 'error', message: 'Failed to get referral hub stats' });
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to get referral hub stats',
+            debug: error.message
+        });
     }
 });
 
@@ -219,7 +445,7 @@ router.post('/apply', auth, async (req, res) => {
             referredUserId: user._id,
             io
         });
-        await distributePracticeRewards(user._id, referrer._id);
+        await distributePracticeReferralBonuses(user._id, io);
 
         res.status(200).json({
             status: 'success',
@@ -288,6 +514,112 @@ router.get('/resolve/:code', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'Failed to resolve referral code' });
+    }
+});
+
+// Claim/Extract Referral Earnings to Main Wallet
+router.post('/claim', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
+
+        if (!user.realBalances) user.realBalances = {};
+
+        // Referral page extraction claims only direct referral earnings.
+        const rawDirectBalance = Number(user.realBalances.directLevel || 0);
+        const lifetimeDirectCommission = await getLifetimeCommissionTotal(user._id, ['deposit_commission']);
+        const pendingDirect =
+            lifetimeDirectCommission > 0
+                ? Math.min(rawDirectBalance, lifetimeDirectCommission)
+                : rawDirectBalance;
+        const totalClaimable = pendingDirect;
+
+        if (totalClaimable <= 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'No referral earnings to claim'
+            });
+        }
+
+        // Migrate any legacy signup-credit residue from real direct wallet -> practice wallet.
+        const migratedPracticeAmount = Math.max(0, rawDirectBalance - pendingDirect);
+        if (migratedPracticeAmount > 0) {
+            user.practiceBalance = (user.practiceBalance || 0) + migratedPracticeAmount;
+        }
+
+        // Move real claimable amount to Cash Balance (Main Wallet)
+        user.realBalances.cash = (user.realBalances.cash || 0) + totalClaimable;
+
+        // Reset direct referral wallet after extraction/migration
+        user.realBalances.directLevel = 0;
+
+        // Add transaction log if needed (omitted for brevity, can be added)
+
+        await user.save();
+
+        const io = req.app.get('io');
+        if (io) {
+            const eventPayload = {
+                id: `ref_claim_${user._id.toString()}_${Date.now()}`,
+                type: 'referral',
+                walletAddress: user.walletAddress || '',
+                amount: totalClaimable,
+                txHash: null,
+                status: 'confirmed',
+                createdAt: new Date().toISOString(),
+                note: 'referral_claim'
+            };
+
+            io.to(user._id.toString()).emit('balance_update', {
+                type: 'referral_claim',
+                amount: totalClaimable,
+                newBalance: user.realBalances.cash
+            });
+            if (migratedPracticeAmount > 0) {
+                io.to(user._id.toString()).emit('balance_update', {
+                    type: 'referral_bonus',
+                    walletType: 'practice',
+                    amount: migratedPracticeAmount,
+                    newBalance: user.practiceBalance || 0
+                });
+            }
+            io.emit('transaction_created', eventPayload);
+            io.emit('referral_commission_created', eventPayload);
+        }
+
+        const totalUnified =
+            (user.realBalances.cash || 0) +
+            (user.realBalances.game || 0) +
+            (user.realBalances.cashback || 0) +
+            (user.realBalances.lucky || 0) +
+            (user.realBalances.directLevel || 0) +
+            (user.realBalances.winners || 0) +
+            (user.realBalances.roiOnRoi || 0) +
+            (user.realBalances.club || 0) +
+            (user.realBalances.teamWinners || 0) +
+            (user.realBalances.walletBalance || 0) +
+            (user.realBalances.luckyDrawWallet || 0);
+
+        res.status(200).json({
+            status: 'success',
+            message: `Successfully claimed ${totalClaimable.toFixed(2)} USDT to Main Wallet`,
+            data: {
+                claimedAmount: totalClaimable,
+                migratedPracticeAmount,
+                newMainBalance: user.realBalances.cash,
+                totalUnified,
+                remainingReferralBalances: {
+                    directLevel: user.realBalances.directLevel || 0,
+                    teamWinners: user.realBalances.teamWinners || 0,
+                    roiOnRoi: user.realBalances.roiOnRoi || 0,
+                    club: user.realBalances.club || 0
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Claim error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to claim earnings' });
     }
 });
 

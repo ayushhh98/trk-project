@@ -14,6 +14,7 @@ interface AnalyticsData {
     totalWagered: number;
     totalPayout: number;
     houseEdge: number;
+    newUsersToday?: number; // Added
 }
 
 interface SystemStatus {
@@ -49,10 +50,20 @@ export function AdminStats() {
         fetchData();
 
         const handleStatsUpdate = (data: any) => {
-            setAnalytics(prev => ({ ...prev, ...data }));
+            setAnalytics(prev => {
+                const newData = { ...prev, ...data };
+                if (data.totalUsers !== undefined) newData.totalUsers = data.totalUsers;
+                if (data.totalWagered !== undefined) newData.totalWagered = data.totalWagered;
+                return newData;
+            });
         };
+
         const handleUserRegistered = () => {
-            setAnalytics(prev => prev ? ({ ...prev, totalUsers: prev.totalUsers + 1 }) : null);
+            setAnalytics(prev => prev ? ({
+                ...prev,
+                totalUsers: (prev.totalUsers || 0) + 1,
+                newUsersToday: (prev.newUsersToday || 0) + 1 // Increment today's count
+            }) : null);
         };
 
         // Real-time listeners
@@ -94,7 +105,15 @@ export function AdminStats() {
             icon: Users,
             color: "text-blue-400",
             bg: "bg-blue-400/10",
-            sub: `${analytics?.bannedUsers} restricted`
+            sub: (
+                <span className="flex items-center gap-1.5">
+                    <span className="text-emerald-400 font-bold">
+                        +{analytics?.newUsersToday || 0} New
+                    </span>
+                    <span className="text-white/20">|</span>
+                    <span>{analytics?.bannedUsers} Bans</span>
+                </span>
+            )
         },
         {
             title: "Total Wagered",
@@ -139,10 +158,11 @@ export function AdminStats() {
                             {stat.value}
                         </div>
                         <div className="flex items-center gap-2 mt-2">
+                            {/* Indicator dot */}
                             <div className={cn("w-1 h-1 rounded-full animate-pulse", stat.color.replace('text-', 'bg-'))} />
-                            <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest leading-none">
+                            <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest leading-none">
                                 {stat.sub}
-                            </p>
+                            </div>
                         </div>
                     </CardContent>
 

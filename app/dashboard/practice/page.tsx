@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useWallet } from "@/components/providers/WalletProvider";
-import { DiceGame } from "@/components/game/DiceGame";
+import { PracticeGame } from "@/components/game/PracticeGame";
+// import { DiceGame } from "@/components/game/DiceGame";
 // import { NeonSpin } from "@/components/game/NeonSpin";
 import { BetHistory } from "@/components/game/BetHistory";
 import { motion, AnimatePresence } from "framer-motion";
@@ -174,6 +175,12 @@ export default function PracticeGamePage() {
                 onConfirm={async (val) => { await deposit(val); }}
             />
 
+            <div className="container mx-auto px-6 pt-6">
+                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-white/70">
+                    Practice Wallet: 100 welcome balance + referral practice rewards (L1: 10). Practice is non-withdrawable. Real referral cash starts after account activation and real-money referral activity.
+                </div>
+            </div>
+
             <main className="container mx-auto px-6 py-10 md:py-16">
                 <AnimatePresence mode="wait">
                     {selectedGame === 'lobby' ? (
@@ -257,7 +264,7 @@ export default function PracticeGamePage() {
                         >
                             <div className="grid lg:grid-cols-12 gap-10">
                                 <div className="lg:col-span-12 space-y-12">
-                                    {selectedGame === 'dice' && <DiceGame />}
+                                    {selectedGame === 'dice' && <PracticeGame />}
                                     {/* {selectedGame === 'spin' && <NeonSpin />} */}
                                     {/* {selectedGame === 'matrix' && <ProbabilityMatrix />} */}
                                     {/* {selectedGame === 'guess' && <NumberGuessGame />} */}

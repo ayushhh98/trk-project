@@ -1,12 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { X, ArrowUpRight, ShieldAlert, BadgeCheck } from "lucide-react";
 import { useWallet } from "@/components/providers/WalletProvider";
+import { useSocket } from "@/components/providers/Web3Provider";
+import { PausedOverlay } from "@/components/ui/PausedOverlay";
+
+// Human-readable labels for wallet types
+const WALLET_LABELS: Record<string, string> = {
+    game: "Game Balance",
+    cash: "Cash Balance",
+    directLevel: "Direct Level Income",
+    winners: "Winners Income",
+    teamWinners: "Winners Level Income",
+    cashback: "Losers Cashback",
+    roiOnRoi: "Losers ROI on ROI",
+    club: "Club Income",
+    lucky: "Lucky Draw Income",
+};
 
 interface WithdrawalModalProps {
     isOpen: boolean;
@@ -20,10 +35,37 @@ export function WithdrawalModal({ isOpen, onClose, preSelectedWallet }: Withdraw
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedWallet, setSelectedWallet] = useState<string>(preSelectedWallet || "game");
 
+    // Sync selectedWallet when the prop changes (e.g., user clicks EXTRACT on a different income stream)
+    useEffect(() => {
+        if (preSelectedWallet) {
+            setSelectedWallet(preSelectedWallet);
+        }
+    }, [preSelectedWallet]);
+
     const maxAmount = realBalances[selectedWallet as keyof typeof realBalances] || 0;
+    const walletLabel = WALLET_LABELS[selectedWallet] || selectedWallet;
+
+    const socket = useSocket();
+    const [isPaused, setIsPaused] = useState(false);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handlePause = (data: { paused: boolean }) => {
+            setIsPaused(data.paused);
+            // Removed auto-close to show overlay instead
+        };
+
+        socket.on('system:withdrawals_paused', handlePause);
+        return () => {
+            socket.off('system:withdrawals_paused', handlePause);
+        };
+    }, [socket]);
 
     const handleWithdraw = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isPaused) return;
+
         const numAmount = parseFloat(amount);
         if (isNaN(numAmount) || numAmount <= 0 || numAmount > maxAmount) return;
 
@@ -58,7 +100,8 @@ export function WithdrawalModal({ isOpen, onClose, preSelectedWallet }: Withdraw
             >
                 <div className="absolute inset-0 bg-red-500/10 blur-3xl -z-10" />
 
-                <Card className="border-0 bg-[#0A0A0A] ring-1 ring-white/10 rounded-[2rem] overflow-hidden">
+                <Card className="border-0 bg-[#0A0A0A] ring-1 ring-white/10 rounded-[2rem] overflow-hidden relative">
+                    {isPaused && <PausedOverlay title="Withdrawals Paused" message="Withdrawals are temporarily suspended by the administrator." />}
                     <div className="relative border-b border-white/5 p-8 flex items-center justify-between overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-r from-red-500/10 to-transparent pointer-events-none" />
 
@@ -69,6 +112,7 @@ export function WithdrawalModal({ isOpen, onClose, preSelectedWallet }: Withdraw
                             <div>
                                 <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40 mb-1">Extraction_Node</h2>
                                 <h3 className="text-xl font-display font-black tracking-tighter uppercase">USDT_WITHDRAWAL</h3>
+                                <p className="text-[10px] font-bold text-primary/60 uppercase tracking-widest mt-1">{walletLabel}</p>
                             </div>
                         </div>
 
@@ -135,10 +179,10 @@ export function WithdrawalModal({ isOpen, onClose, preSelectedWallet }: Withdraw
 
                         <Button
                             onClick={handleWithdraw}
-                            disabled={isSubmitting || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > maxAmount}
-                            className="w-full h-16 bg-white text-black hover:bg-red-500 hover:text-white font-black uppercase tracking-widest text-sm rounded-2xl transition-all active:scale-[0.98] shadow-2xl"
+                            disabled={isSubmitting || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > maxAmount || isPaused}
+                            className={`w-full h-16 bg-white text-black hover:bg-red-500 hover:text-white font-black uppercase tracking-widest text-sm rounded-2xl transition-all active:scale-[0.98] shadow-2xl ${isPaused ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
                         >
-                            {isSubmitting ? "PROCESSING..." : "REQUEST_EXTRACTION"}
+                            {isSubmitting ? "PROCESSING..." : isPaused ? "WITHDRAWALS PAUSED" : "REQUEST_EXTRACTION"}
                         </Button>
                     </CardContent>
                 </Card>

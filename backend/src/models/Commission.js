@@ -22,8 +22,16 @@ const commissionSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['deposit_commission', 'winner_commission'],
+        enum: ['deposit_commission', 'winner_commission', 'signup_bonus', 'roi_commission'],
         required: true
+    },
+    recipientWallet: {
+        type: String,
+        default: null
+    },
+    sourceWallet: {
+        type: String,
+        default: null
     },
     status: {
         type: String,

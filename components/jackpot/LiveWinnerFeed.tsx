@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Trophy, Zap, DollarSign, Crown } from "lucide-react";
 import { useJackpotSocket } from "@/hooks/useJackpotSocket";
+import { apiRequest } from "@/lib/api";
+import { dedupeByKey, mergeUniqueByKey } from "@/lib/collections";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import confetti from "canvas-confetti";
 
 interface Winner {
@@ -37,10 +38,9 @@ export function LiveWinnerFeed({
     useEffect(() => {
         const fetchRecentWinners = async () => {
             try {
-                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lucky-draw/recent-winners`);
-                const result = await response.json();
+                const result = await apiRequest('/lucky-draw/recent-winners');
 
-                if (result.status === 'success' && result.data) {
+                if (result.status === 'success' && Array.isArray(result.data)) {
                     // Map backend winner format to frontend Winner interface
                     const formattedWinners: Winner[] = result.data.map((w: any) => ({
                         id: w.id,
@@ -50,7 +50,9 @@ export function LiveWinnerFeed({
                         timestamp: new Date(w.timestamp),
                         roundNumber: w.roundNumber
                     }));
-                    setWinners(formattedWinners);
+                    setWinners(dedupeByKey(formattedWinners, (w) => w.id || `${w.wallet}-${w.prize}-${w.roundNumber}`));
+                } else {
+                    setWinners([]);
                 }
             } catch (error) {
                 console.error('Failed to fetch recent winners:', error);
@@ -62,23 +64,27 @@ export function LiveWinnerFeed({
         fetchRecentWinners();
     }, [maxItems]);
 
+    // Simulation Logic REMOVED to ensure only real-time data is shown
+    // The component will now strictly rely on API initial fetch and Socket updates.
+
     const { isConnected } = useJackpotSocket({
         onWinnerAnnounced: (data) => {
+            const rawWallet = data.wallet || data.walletAddress || '';
+            const rawPrize = data.prize ?? data.amount ?? 0;
+            const stableId = `${data.roundNumber}-${rawWallet}-${rawPrize}`;
             const newWinner: Winner = {
-                id: `${data.roundNumber}-${data.wallet}-${Date.now()}`,
-                wallet: maskWallet(data.wallet || data.walletAddress),
-                prize: data.prize,
+                id: stableId,
+                wallet: maskWallet(rawWallet),
+                prize: rawPrize,
                 rank: data.rank,
                 timestamp: new Date(),
                 roundNumber: data.roundNumber
             };
 
-            setWinners(prev => {
-                // Avoid duplicates
-                const exists = prev.some(w => w.wallet === newWinner.wallet && w.prize === newWinner.prize && w.roundNumber === newWinner.roundNumber);
-                if (exists) return prev;
-                return [newWinner, ...prev].slice(0, maxItems);
-            });
+            setWinners(prev =>
+                mergeUniqueByKey([newWinner], prev, (w) => w.id || `${w.wallet}-${w.prize}-${w.roundNumber}`)
+                    .slice(0, maxItems)
+            );
             setIsLive(true);
 
             // Show celebration for top 3 winners
@@ -113,6 +119,8 @@ export function LiveWinnerFeed({
         if (address.includes('...')) return address;
         return `${address.slice(0, 6)}...${address.slice(-4)}`;
     };
+
+
 
     // Compact variant - single row with latest winner
     if (variant === "compact") {

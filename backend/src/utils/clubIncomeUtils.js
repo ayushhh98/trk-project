@@ -125,6 +125,7 @@ const processDailyClubIncome = async (io, manualTurnover = null) => {
             const perUserIncome = rankPool / users.length;
 
             for (const user of users) {
+                const previousRank = user.clubRank;
                 user.realBalances.club = (user.realBalances.club || 0) + perUserIncome;
                 user.totalRewardsWon = (user.totalRewardsWon || 0) + perUserIncome;
 
@@ -140,10 +141,28 @@ const processDailyClubIncome = async (io, manualTurnover = null) => {
                         newBalance: user.realBalances.club,
                         rank: rankId
                     });
+
+                    if (previousRank !== rankId) {
+                        io.emit('club_rank_updated', {
+                            walletAddress: user.walletAddress || null,
+                            clubRank: rankId,
+                            previousRank: previousRank || null,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
                 }
                 distributedTotal += perUserIncome;
                 winnersCount++;
             }
+        }
+
+        if (io) {
+            io.emit('club_income_distributed', {
+                distributed: distributedTotal,
+                winners: winnersCount,
+                turnover: activeTurnover,
+                createdAt: new Date().toISOString()
+            });
         }
 
         console.log(`Club Income processed: ${distributedTotal} Distributed to ${winnersCount} users.`);

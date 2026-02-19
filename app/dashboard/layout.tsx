@@ -16,17 +16,23 @@ export default function DashboardLayout({
     const { isConnected, isLoading, isSwitchingWallet, user } = useWallet();
     const router = useRouter();
 
-    // Redirect to auth if not connected
+    // Redirect to auth if not connected, or enforce referral
     useEffect(() => {
         if (isLoading || isSwitchingWallet) return;
-        if (typeof window !== "undefined") {
-            const hasToken = !!localStorage.getItem("trk_token");
-            if (hasToken) return;
+
+        const hasToken = typeof window !== "undefined" && !!localStorage.getItem("trk_token");
+
+        if (!hasToken && !isConnected) {
+            router.push("/");
+            return;
         }
-        if (!isConnected) {
+
+        if (user && user.role === "player" && !user.referredBy) {
             router.push("/auth");
+            return;
         }
-    }, [isConnected, isLoading, isSwitchingWallet, router]);
+
+    }, [isConnected, isLoading, isSwitchingWallet, user, router]);
 
     return (
         <NotificationProvider userId={user?.id}>

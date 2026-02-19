@@ -53,10 +53,10 @@ npm start
 
 ## 2. Frontend Deployment
 
-### Environment Variables (.env.local)
+### Environment Variables (.env.local / Vercel Env)
 ```bash
-NEXT_PUBLIC_API_URL=https://your-backend-domain.com/api
-NEXT_PUBLIC_SOCKET_URL=https://your-backend-domain.com
+NEXT_PUBLIC_API_URL=https://trk-backend.onrender.com/api
+NEXT_PUBLIC_SOCKET_URL=https://trk-backend.onrender.com
 ```
 
 ### Vercel Deployment

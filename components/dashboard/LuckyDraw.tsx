@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Gift, Zap, Users, Loader2, Sparkles, Trophy, History } from "lucide-react";
+import { Gift, Zap, Users, Loader2, Sparkles, Trophy, History, Lock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { gameAPI, apiRequest } from "@/lib/api";
+import { dedupeByKey, mergeUniqueByKey } from "@/lib/collections";
 import { useJackpotSocket } from "@/hooks/useJackpotSocket";
 
 interface Winner {
@@ -25,15 +27,20 @@ export function LuckyDraw() {
 
     const fetchStatus = useCallback(async () => {
         try {
-            const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
-            const res = await fetch(`${apiBase}/api/lucky-draw/status`);
-            const data = await res.json();
-            if (data.status === 'success') {
-                setStatus(data.data);
-                setWinners(data.data.recentWinners || []);
+            const [statusData, winnersData] = await Promise.all([
+                gameAPI.getLuckyDrawStatus(),
+                apiRequest('/lucky-draw/recent-winners')
+            ]);
+
+            if (statusData.status === 'success') {
+                setStatus(statusData.data);
+            }
+
+            if (winnersData.status === 'success' && Array.isArray(winnersData.data)) {
+                setWinners(dedupeByKey(winnersData.data, (w: any) => `${w.wallet}-${w.rank}-${w.timestamp}`));
             }
         } catch (error) {
-            console.error("Failed to fetch Lucky Draw status", error);
+            console.error("Failed to fetch Lucky Draw data", error);
         }
     }, []);
 
@@ -47,6 +54,12 @@ export function LuckyDraw() {
                 // Ensure recentWinners is preserved if not sent in partial update
                 recentWinners: data.recentWinners || prev?.recentWinners || []
             }));
+            if (Array.isArray(data?.recentWinners)) {
+                setWinners(prev =>
+                    mergeUniqueByKey(data.recentWinners, prev, (w) => `${w.wallet}-${w.rank}-${w.timestamp}`)
+                        .slice(0, 10)
+                );
+            }
 
             // If the system is halted or resumed, toast a notification
             if (data.drawIsActive !== undefined && status) {
@@ -69,7 +82,10 @@ export function LuckyDraw() {
             });
         },
         onWinnerAnnounced: (winner) => {
-            setWinners(prev => [winner, ...prev].slice(0, 10));
+            setWinners(prev =>
+                mergeUniqueByKey([winner], prev, (w) => `${w.wallet}-${w.rank}-${w.timestamp}`)
+                    .slice(0, 10)
+            );
             toast.success(`JACKPOT! ${winner.wallet.slice(0, 6)}... won ${winner.prize}!`, {
                 icon: <Trophy className="h-5 w-5 text-amber-500" />,
                 duration: 8000
@@ -85,9 +101,10 @@ export function LuckyDraw() {
 
     useEffect(() => {
         fetchStatus();
+        if (isConnected) return;
         const interval = setInterval(fetchStatus, 30000); // Poll every 30s as fallback
         return () => clearInterval(interval);
-    }, [fetchStatus]);
+    }, [fetchStatus, isConnected]);
 
     const handleBuyTicket = async () => {
         if (!token) {
@@ -97,17 +114,7 @@ export function LuckyDraw() {
 
         setIsBuying(true);
         try {
-            const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
-            const res = await fetch(`${apiBase}/api/lucky-draw/buy-ticket`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ quantity: 1 })
-            });
-
-            const data = await res.json();
+            const data = await gameAPI.buyLuckyDrawTickets(1);
             if (data.status === 'success') {
                 toast.success("Ticket Protocol Initiated! Good luck.");
                 fetchStatus();
@@ -135,11 +142,11 @@ export function LuckyDraw() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                         <div className="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-[10px] font-mono font-bold text-purple-500 uppercase tracking-widest">
-                            Round #{status?.currentRound || 142}
+                            Round #{status?.currentRound ?? "..."}
                         </div>
                         <div className={`flex items-center gap-1.5 text-[10px] font-bold animate-pulse ${isConnected ? 'text-emerald-500' : 'text-amber-500'}`}>
-                            <div className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                            {isConnected ? 'LIVE FEED ACTIVE' : 'CONNECTING...'}
+                            <div className={`h-1.5 w-1.5 rounded-full ${isConnected ? (status?.drawIsActive ? 'bg-emerald-500' : 'bg-amber-500') : 'bg-amber-500'}`} />
+                            {isConnected ? (status?.drawIsActive ? 'LIVE FEED ACTIVE' : 'SYSTEM HALTED') : 'CONNECTING...'}
                         </div>
                     </div>
                 </div>
@@ -152,6 +159,17 @@ export function LuckyDraw() {
                     <p className="text-sm text-muted-foreground leading-relaxed">
                         Provably fair jackpots. <span className="text-white font-bold">1 in 10 Wins</span> guaranteed by the TRK protocol.
                     </p>
+
+                    {/* Total Prize Pool Display */}
+                    <div className="bg-gradient-to-r from-amber-500/20 to-purple-500/20 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Trophy className="h-5 w-5 text-amber-500 animate-pulse" />
+                            <span className="text-xs font-black uppercase text-amber-500 tracking-widest">Current Prize Pool</span>
+                        </div>
+                        <div className="text-xl font-mono font-black text-white text-shadow-glow">
+                            ${status?.totalPrizePool?.toLocaleString() ?? "70,000"} <span className="text-xs text-white/50">USDT</span>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Live Winner Ticker */}
@@ -186,7 +204,7 @@ export function LuckyDraw() {
                     <div className="flex justify-between items-end">
                         <div className="space-y-1">
                             <div className="text-[9px] font-black uppercase text-white/30 tracking-widest">Jackpot Fill</div>
-                            <div className="text-lg font-mono font-bold text-white">{status?.ticketsSold || 0} <span className="text-xs text-white/40">/ {status?.totalTickets || 10000}</span></div>
+                            <div className="text-lg font-mono font-bold text-white">{status?.ticketsSold ?? 0} <span className="text-xs text-white/40">/ {status?.totalTickets ?? "..."}</span></div>
                         </div>
                         <div className="text-right">
                             <div className="text-[9px] font-black uppercase text-white/30 tracking-widest">Probability</div>
@@ -206,19 +224,48 @@ export function LuckyDraw() {
                 <div className="pt-6 border-t border-white/5 flex gap-3">
                     <Button
                         onClick={handleBuyTicket}
-                        disabled={isBuying}
-                        className="flex-1 bg-purple-500 text-white hover:bg-purple-400 font-bold uppercase tracking-widest shadow-[0_0_20px_rgba(168,85,247,0.3)] transition-all"
+                        disabled={isBuying || (status && !status.drawIsActive)}
+                        className={`flex-1 font-bold uppercase tracking-widest shadow-[0_0_20px_rgba(168,85,247,0.3)] transition-all ${status && !status.drawIsActive
+                            ? "bg-amber-500/20 text-amber-500 cursor-not-allowed hover:bg-amber-500/20"
+                            : "bg-purple-500 text-white hover:bg-purple-400"
+                            }`}
                     >
-                        {isBuying ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Get Ticket <Zap className="h-3 w-3 ml-2 fill-current" /></>}
+                        {isBuying ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : status && !status.drawIsActive ? (
+                            <>Protocol Paused <Loader2 className="h-3 w-3 ml-2" /></>
+                        ) : (
+                            <>Get Ticket <Zap className="h-3 w-3 ml-2 fill-current" /></>
+                        )}
                     </Button>
                     <div className="flex flex-col justify-center px-4 bg-white/5 rounded-xl border border-white/5">
                         <span className="text-[9px] font-black uppercase text-white/30 tracking-widest">Entry</span>
-                        <span className="text-xs font-mono font-bold text-white">{status?.ticketPrice || 10} <span className="text-[10px] text-purple-400">USDT</span></span>
+                        <span className="text-xs font-mono font-bold text-white">{status?.ticketPrice ?? "..."} <span className="text-[10px] text-purple-400">USDT</span></span>
                     </div>
                 </div>
             </CardContent>
 
             <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-transparent via-purple-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+            {/* Paused Overlay */}
+            <AnimatePresence>
+                {status && !status.drawIsActive && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6"
+                    >
+                        <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center border border-amber-500/20 mb-4 shadow-[0_0_30px_rgba(245,158,11,0.2)]">
+                            <Lock className="w-8 h-8 text-amber-500" />
+                        </div>
+                        <h3 className="text-xl font-bold text-white mb-2">Protocol Paused</h3>
+                        <p className="text-sm text-white/50 max-w-[200px]">
+                            Lucky Draw entries are temporarily suspended by the administrator.
+                        </p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </Card>
     );
 }

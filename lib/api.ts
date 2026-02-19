@@ -1,5 +1,50 @@
 // API Configuration
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL?.trim() || 'http://localhost:5000').replace(/\/api\/?$/, '') + '/api';
+const normalizeBase = (value: string) => value.replace(/\/+$/, '');
+const localhostPattern = /(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)/i;
+let localhostEnvWarned = false;
+
+const resolveApiOrigin = () => {
+    const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
+    if (envBase) {
+        const normalized = normalizeBase(envBase.replace(/\/api\/?$/, ''));
+        if (typeof window !== 'undefined') {
+            const browserHost = window.location.hostname;
+            const isBrowserLocal = localhostPattern.test(browserHost);
+            if (!isBrowserLocal && localhostPattern.test(normalized)) {
+                if (!localhostEnvWarned) {
+                    console.warn('NEXT_PUBLIC_API_URL points to localhost on a non-local host; falling back to window origin.');
+                    localhostEnvWarned = true;
+                }
+            } else {
+                return normalized;
+            }
+        } else {
+            return normalized;
+        }
+    }
+    if (typeof window !== 'undefined') {
+        return normalizeBase(window.location.origin);
+    }
+    if (process.env.NODE_ENV === 'production') {
+        return '';
+    }
+    return 'http://localhost:5000';
+};
+
+export const getApiBase = () => resolveApiOrigin();
+
+export const getApiUrl = () => {
+    // Force localhost for development stability
+    if (process.env.NODE_ENV !== 'production') {
+        return 'http://localhost:5000/api';
+    }
+    const origin = resolveApiOrigin();
+    if (!origin) return '/api';
+    return `${origin}/api`;
+};
+
+const API_BASE_URL = getApiUrl();
+const forceMock = false; // Permanently disabled
 
 // Token storage keys
 const TOKEN_KEY = 'trk_token';
@@ -131,7 +176,7 @@ export const apiRequest = async (
     options: RequestInit = {},
     isRetry = false
 ): Promise<any> => {
-    // Check if we should use mock data
+    // Check if we should use mock data (Only via explicit ENV flag)
     const useMock = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 
     if (useMock) {
@@ -151,6 +196,120 @@ export const apiRequest = async (
             return {
                 status: 'success',
                 message: 'Password reset successful. Please log in again.'
+            };
+        }
+
+        if (endpoint.includes('/content/posters')) {
+            return {
+                status: 'success',
+                data: [
+                    {
+                        _id: 'mock-poster-1',
+                        type: 'promo',
+                        title: 'Become The Protocol Owner',
+                        description: 'Unlock governance rights, revenue sharing, and elite tier withdrawal limits.',
+                        link: '/dashboard',
+                        imageUrl: '',
+                        isActive: true
+                    },
+                    {
+                        _id: 'mock-poster-2',
+                        type: 'launch',
+                        title: 'Lucky Draw Jackpot',
+                        description: 'Enter the next draw and secure a share of the protocol prize pool.',
+                        link: '/dashboard/lucky-draw',
+                        imageUrl: '',
+                        stats: [
+                            { label: 'Prize Pool', value: '$25,000' },
+                            { label: 'Tickets', value: 'Unlimited' },
+                            { label: 'Draw', value: 'Daily' }
+                        ],
+                        isActive: true
+                    }
+                ]
+            };
+        }
+
+
+
+
+
+        if (endpoint.includes('/game/history')) {
+            return {
+                status: 'success',
+                data: {
+                    games: [],
+                    pagination: {
+                        page: 1,
+                        total: 0,
+                        limit: 20
+                    }
+                }
+            };
+        }
+
+        if (endpoint.includes('/notifications/read-all')) {
+            return {
+                status: 'success',
+                data: {
+                    unreadCount: 0
+                }
+            };
+        }
+
+        if (endpoint.includes('/notifications/') && endpoint.includes('/read')) {
+            return {
+                status: 'success',
+                data: {
+                    unreadCount: 0
+                }
+            };
+        }
+
+        if (endpoint.includes('/notifications')) {
+            return {
+                status: 'success',
+                data: {
+                    notifications: [],
+                    unreadCount: 0
+                }
+            };
+        }
+
+        if (endpoint.includes('/auth/nonce')) {
+            return {
+                status: 'success',
+                data: {
+                    nonce: '123456',
+                    message: 'Sign this message to authenticate with TRK: 123456'
+                }
+            };
+        }
+
+        if (endpoint.includes('/auth/link-wallet/nonce')) {
+            return {
+                status: 'success',
+                data: {
+                    nonce: '123456',
+                    message: 'Link this wallet to my TRK account: 123456'
+                }
+            };
+        }
+
+        if (endpoint.includes('/auth/link-wallet')) {
+            let walletAddress = '0x71C9...3A9F';
+            if (options?.body) {
+                try {
+                    const body = JSON.parse(options.body as string);
+                    if (body?.walletAddress) walletAddress = body.walletAddress;
+                } catch (err) {
+                    // ignore parsing errors for mock data
+                }
+            }
+            return {
+                status: 'success',
+                message: 'Wallet linked successfully',
+                data: { walletAddress }
             };
         }
 
@@ -635,7 +794,10 @@ export const apiRequest = async (
             if (response.status === 401 && !endpoint.includes('/auth')) {
                 removeToken();
             }
-            throw new Error(data.message || 'API request failed');
+            const apiError: any = new Error(data.message || 'API request failed');
+            apiError.status = response.status;
+            apiError.data = data;
+            throw apiError;
         }
 
         return data;
@@ -645,7 +807,23 @@ export const apiRequest = async (
             console.error(`API Error (${endpoint}):`, error, hint);
             throw new Error(hint);
         }
-        console.error(`API Error (${endpoint}):`, error);
+        const msg = error?.message || '';
+        const isReferralRequiredNonceError =
+            endpoint.includes('/auth/nonce')
+            && error?.status === 400
+            && (
+                error?.data?.requiresReferral
+                || msg.includes('Referral code is required')
+                || msg.includes('referral code to join')
+            );
+
+        // Suppress expected validation noise from console error logs
+        if (error?.status === 404 || error?.message?.includes('404') || isReferralRequiredNonceError) {
+            // Debug level only
+            // console.debug(`API Check (${endpoint}): Not Found`);
+        } else {
+            console.error(`API Error (${endpoint}):`, error);
+        }
         throw error;
     }
 };
@@ -727,7 +905,12 @@ export const authAPI = {
     getNonce: async (walletAddress: string, referrerCode?: string) => {
         return apiRequest('/auth/nonce', {
             method: 'POST',
-            body: JSON.stringify({ walletAddress, referrerCode }),
+            body: JSON.stringify({
+                walletAddress,
+                // Backend expects `referralCode` for nonce creation; keep `referrerCode` for compatibility.
+                referralCode: referrerCode,
+                referrerCode
+            }),
         });
     },
 
@@ -908,6 +1091,14 @@ export const gameAPI = {
     // Get User Tickets
     getMyTickets: async () => {
         return apiRequest('/lucky-draw/my-tickets');
+    },
+
+    // Record on-chain game (for backend sync)
+    recordOnchain: async (payload: { txHash: string; amount: number; prediction: string; gameType: string; roundId: string }) => {
+        return apiRequest('/game/record-onchain', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
     }
 };
 
@@ -916,6 +1107,13 @@ export const referralAPI = {
     // Get referral stats
     getStats: async () => {
         return apiRequest('/referral/stats');
+    },
+
+    // Claim referral earnings to main wallet
+    claimEarnings: async () => {
+        return apiRequest('/referral/claim', {
+            method: 'POST',
+        });
     },
 
     // Apply referral code
@@ -930,6 +1128,12 @@ export const referralAPI = {
     getCommissions: async () => {
         return apiRequest('/referral/commissions');
     },
+
+    // Resolve referral code to wallet address
+    resolve: async (referralCode: string) => {
+        const code = encodeURIComponent(referralCode);
+        return apiRequest(`/referral/resolve/${code}`);
+    }
 };
 
 // Deposit/Activation API
@@ -956,10 +1160,10 @@ export const depositAPI = {
     },
 
     // Withdraw funds
-    withdraw: async (walletType: string, amount: number, toAddress?: string) => {
+    withdraw: async (walletType: string, amount: number, toAddress?: string, onChainTx?: string) => {
         return apiRequest('/deposit/withdraw', {
             method: 'POST',
-            body: JSON.stringify({ walletType, amount, toAddress }),
+            body: JSON.stringify({ walletType, amount, toAddress, onChainTx }),
         });
     },
 
@@ -1024,6 +1228,24 @@ export const freeCreditsAPI = {
     claim: async () => {
         return apiRequest('/free-credits/claim', {
             method: 'POST'
+        });
+    }
+};
+
+// Notifications API
+export const notificationsAPI = {
+    getAll: async (category?: string) => {
+        const params = category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : '';
+        return apiRequest(`/notifications${params}`);
+    },
+    markRead: async (id: string) => {
+        return apiRequest(`/notifications/${id}/read`, {
+            method: 'PATCH'
+        });
+    },
+    markAllRead: async () => {
+        return apiRequest('/notifications/read-all', {
+            method: 'PATCH'
         });
     }
 };
@@ -1188,6 +1410,7 @@ export default {
     rewards: rewardsAPI,
     packages: packagesAPI,
     freeCredits: freeCreditsAPI,
+    notifications: notificationsAPI,
     club: clubAPI,
     admin: adminAPI,
     roiOnRoi: roiOnRoiAPI,

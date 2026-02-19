@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { authAPI } from "@/lib/api";
 import { toast } from "sonner";
 import { Mail, Lock, Shield, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { GoogleLogin } from "./GoogleLogin";
+import { useSocket } from "@/components/providers/Web3Provider";
+import { PausedOverlay } from "@/components/ui/PausedOverlay";
 
 export const HybridAuth = ({ onAuthSuccess }: { onAuthSuccess?: () => void }) => {
     const [showForm, setShowForm] = useState(false);
@@ -22,6 +24,23 @@ export const HybridAuth = ({ onAuthSuccess }: { onAuthSuccess?: () => void }) =>
     const [resetOtp, setResetOtp] = useState('');
     const [resetPassword, setResetPassword] = useState('');
     const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
+
+    const socket = useSocket();
+    const [isRegistrationPaused, setIsRegistrationPaused] = useState(false);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handlePause = (data: { paused: boolean }) => {
+            setIsRegistrationPaused(data.paused);
+            // Removed auto-switch to login to show overlay instead
+        };
+
+        socket.on('system:registrations_paused', handlePause);
+        return () => {
+            socket.off('system:registrations_paused', handlePause);
+        };
+    }, [socket]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -298,7 +317,13 @@ export const HybridAuth = ({ onAuthSuccess }: { onAuthSuccess?: () => void }) =>
     // Show login/register form
     if (showForm) {
         return (
-            <div className="w-full">
+            <div className="w-full relative overflow-hidden rounded-xl">
+                {isRegister && isRegistrationPaused && (
+                    <PausedOverlay
+                        title="Registrations Paused"
+                        message="New account creation is temporarily suspended."
+                    />
+                )}
                 <form onSubmit={isRegister ? handleRegister : handleLogin} className="space-y-4">
                     {formError && (
                         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -358,10 +383,11 @@ export const HybridAuth = ({ onAuthSuccess }: { onAuthSuccess?: () => void }) =>
                         </button>
                         <button
                             type="button"
-                            className="text-primary hover:underline"
-                            onClick={() => setIsRegister(!isRegister)}
+                            className={`text-primary hover:underline ${isRegistrationPaused ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            onClick={() => !isRegistrationPaused && setIsRegister(!isRegister)}
+                            disabled={isRegistrationPaused}
                         >
-                            {isRegister ? "Have an account? Login" : "New here? Register"}
+                            {isRegister ? "Have an account? Login" : isRegistrationPaused ? "Registration Paused" : "New here? Register"}
                         </button>
                     </div>
                 </form>

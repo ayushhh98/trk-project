@@ -24,10 +24,11 @@ const startCronJobs = (io) => {
 
             const deleted = await User.deleteMany({
                 'activation.tier': 'none',
-                'activation.registrationTime': { $lt: thirtyDaysAgo }
+                'activation.totalDeposited': 0,
+                createdAt: { $lt: thirtyDaysAgo }
             });
             if (deleted.deletedCount > 0) {
-                console.log(`🧹 Deleted ${deleted.deletedCount} inactive practice accounts.`);
+                console.log(`🧹 Deleted ${deleted.deletedCount} inactive practice accounts older than 30 days.`);
             }
 
             // B. CASHBACK: Phase-based and Capping-based distribution
@@ -131,6 +132,12 @@ const startCronJobs = (io) => {
                             type: 'rank_up',
                             message: `Congratulations! You've reached ${newRank}!`,
                             newRank: newRank
+                        });
+                        io.emit('club_rank_updated', {
+                            walletAddress: user.walletAddress || null,
+                            previousRank: oldRank || null,
+                            clubRank: newRank,
+                            createdAt: new Date().toISOString()
                         });
                     }
                 }

@@ -2,6 +2,7 @@ const JackpotRound = require('../models/JackpotRound');
 const User = require('../models/User');
 const crypto = require('crypto');
 const { logger } = require('../utils/logger');
+const system = require('../config/system');
 
 /**
  * Jackpot Service
@@ -400,12 +401,14 @@ class JackpotService {
     emitStatusUpdate(round) {
         if (!this.io) return;
 
+        const isSystemPaused = system.get().emergencyFlags.pauseLuckyDraw;
+
         this.io.emit('jackpot:status_update', {
             roundNumber: round.roundNumber,
             ticketsSold: round.ticketsSold,
             totalTickets: round.totalTickets,
             ticketPrice: round.ticketPrice,
-            isActive: round.isActive,
+            isActive: round.isActive && !isSystemPaused,
             status: round.status,
             progress: round.progress
         });

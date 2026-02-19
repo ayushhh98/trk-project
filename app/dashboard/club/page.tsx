@@ -1,7 +1,7 @@
 "use client";
 
 import { useWallet } from "@/components/providers/WalletProvider";
-import { socket } from "@/components/providers/Web3Provider";
+import { useSocket } from "@/components/providers/Web3Provider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
@@ -26,6 +26,7 @@ const DEFAULT_RANK_STRUCTURE = [
 
 export default function ClubIncPage() {
     const { address, user } = useWallet();
+    const socket = useSocket();
 
     type ClubRankProgress = {
         id: string;
@@ -108,8 +109,8 @@ export default function ClubIncPage() {
                 const currentRankId = apiCurrentRank || fallbackRankId || 'Rank 0';
                 const currentRankName = status?.currentRank?.name || resolveRankName(currentRankId);
 
-                const strongLegVolume = status?.qualification?.strongLegVolume ?? 0;
-                const otherLegsVolume = status?.qualification?.otherLegsVolume ?? 0;
+                const strongLegVolume = status?.qualification?.strongLegVolume ?? status?.nextRank?.strongLeg ?? 0;
+                const otherLegsVolume = status?.qualification?.otherLegsVolume ?? status?.nextRank?.otherLegs ?? 0;
                 const totalTeamVolume = status?.nextRank?.current ?? (strongLegVolume + otherLegsVolume);
 
                 setClubData(prev => ({
@@ -118,8 +119,8 @@ export default function ClubIncPage() {
                     totalTurnover: status?.dailyPool?.totalTurnover ?? 0,
                     poolPercentage: status?.dailyPool?.poolPercentage ?? '8%',
                     dailyPoolAmount: status?.dailyPool?.totalPoolAmount ?? 0,
-                    earningsToday: status?.earnings?.today ?? 0,
-                    totalEarned: status?.earnings?.totalReceived ?? 0,
+                    earningsToday: status?.earnings?.todayEstimated ?? status?.earnings?.today ?? 0,
+                    totalEarned: status?.earnings?.totalReceived ?? user?.realBalances?.club ?? 0,
                     strongLegVolume,
                     otherLegsVolume,
                     totalTeamVolume,
@@ -140,24 +141,31 @@ export default function ClubIncPage() {
 
         loadClubData();
 
-        // Socket Listener for Real-Time Turnover
+        return () => {
+            isActive = false;
+        };
+    }, [user?.clubRank, user?.realBalances?.club]);
+
+    useEffect(() => {
+        if (!socket) return;
+
         const onTurnoverUpdate = (data: any) => {
+            const dailyTurnover = Number(data?.dailyTurnover ?? 0);
             setClubData(prev => ({
                 ...prev,
-                totalTurnover: data.dailyTurnover,
-                dailyPoolAmount: data.dailyTurnover * 0.08
+                totalTurnover: Number(data?.totalTurnover ?? prev.totalTurnover ?? 0),
+                dailyPoolAmount: dailyTurnover * (Number.isFinite(Number.parseFloat(prev.poolPercentage))
+                    ? Number.parseFloat(prev.poolPercentage) / 100
+                    : 0.08)
             }));
         };
 
-        if (socket) {
-            socket.on('platform:turnover_update', onTurnoverUpdate);
-        }
+        socket.on('platform:turnover_update', onTurnoverUpdate);
 
         return () => {
-            isActive = false;
-            if (socket) socket.off('platform:turnover_update', onTurnoverUpdate);
+            socket.off('platform:turnover_update', onTurnoverUpdate);
         };
-    }, [user?.clubRank]);
+    }, [socket]);
 
     const effectiveNextRank = clubData.nextRank || {
         id: clubData.currentRank.id,
@@ -223,7 +231,7 @@ export default function ClubIncPage() {
 
                         <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
                             {[
-                                { label: 'Daily Pool', value: `$${clubData.dailyPoolAmount.toLocaleString('en-US')}`, sub: '8% TURNOVER POOL', icon: Zap, color: 'amber' },
+                                { label: 'Daily Pool', value: `$${clubData.dailyPoolAmount.toLocaleString('en-US')}`, sub: `${clubData.poolPercentage} TURNOVER POOL`, icon: Zap, color: 'amber' },
                                 { label: 'Your Rank', value: clubData.currentRank.name, sub: 'LEADERSHIP STATUS', icon: Trophy, color: 'blue' },
                                 { label: 'Today\'s Share', value: `$${clubData.earningsToday.toLocaleString('en-US')}`, sub: 'DISTRIBUTED DAILY', icon: TrendingUp, color: 'green' }
                             ].map((stat, i) => (
@@ -320,7 +328,9 @@ export default function ClubIncPage() {
                                     <div className="relative z-10 text-center space-y-4">
                                         <div className="h-40 w-40 rounded-full bg-black/40 border border-amber-500/20 flex flex-col items-center justify-center p-8 backdrop-blur-3xl shadow-[0_0_100px_rgba(245,158,11,0.2)]">
                                             <div className="text-[10px] font-black text-white/20 uppercase tracking-widest leading-none mb-2">Total Team</div>
-                                            <div className="text-4xl font-black text-white tracking-tighter italic">20K</div>
+                                            <div className="text-4xl font-black text-white tracking-tighter italic">
+                                                {clubData.totalTeamVolume.toLocaleString('en-US')}
+                                            </div>
                                             <div className="text-[9px] font-bold text-amber-500 uppercase mt-1">USD Volume</div>
                                         </div>
                                         <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.5em]">

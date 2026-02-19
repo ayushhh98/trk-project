@@ -14,14 +14,20 @@ export function CountdownTimer({ expiryDate }: CountdownTimerProps) {
     const [isExpired, setIsExpired] = useState(false);
 
     useEffect(() => {
-        // Default to a future date if no expiryDate is provided (e.g., 30 days from now)
-        // This ensures the timer always has a valid target for the "practice" period.
-        const targetDate = expiryDate ? new Date(expiryDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        // If no expiryDate is provided, keep the timer at zero and marked as expired
+        if (!expiryDate) {
+            setTimeLeft({ days: 0, hours: 0, minutes: 0 });
+            setIsExpired(true);
+            return;
+        }
+
+        const targetDate = new Date(expiryDate);
 
         const calculateTimeLeft = () => {
             const difference = +targetDate - +new Date();
 
             if (difference > 0) {
+                setIsExpired(false);
                 return {
                     days: Math.floor(difference / (1000 * 60 * 60 * 24)),
                     hours: Math.floor((difference / (1000 * 60 * 60)) % 24),

@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import io, { Socket } from 'socket.io-client';
-import { getToken } from '@/lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { useSocket } from '@/components/providers/Web3Provider';
 
 type JackpotEventHandlers = {
     onTicketSold?: (data: any) => void;
@@ -13,154 +12,81 @@ type JackpotEventHandlers = {
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export function useJackpotSocket(handlers: JackpotEventHandlers = {}) {
+    const socket = useSocket();
     const [isConnected, setIsConnected] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
-    const socketRef = useRef<Socket | null>(null);
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const reconnectAttempts = useRef(0);
-    const MAX_RECONNECT_ATTEMPTS = 5;
-    const connectRef = useRef<() => void>(() => {});
 
-    // Store handlers in a ref to avoid dependency cycles
     const handlersRef = useRef(handlers);
 
-    // Update handlers ref whenever they change
     useEffect(() => {
         handlersRef.current = handlers;
     }, [handlers]);
 
-    const handleReconnect = useCallback(() => {
-        if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) {
-            console.warn('⚠️ Max reconnection attempts reached');
+    useEffect(() => {
+        if (!socket) {
+            setIsConnected(false);
+            setConnectionStatus('disconnected');
             return;
         }
 
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-        reconnectAttempts.current++;
-
-        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})`);
-
-        reconnectTimeoutRef.current = setTimeout(() => {
-            // Check if socket is still disconnected before trying to connect
-            // and ensure we don't have an active connection attempt
-            if (!socketRef.current?.connected) {
-                connectRef.current();
-            }
-        }, delay);
-    }, []);
-
-    const connect = useCallback(() => {
-        if (socketRef.current?.connected) return;
-
-        setConnectionStatus('connecting');
-
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, '') || 'http://localhost:5000';
-        const token = getToken();
-
-        socketRef.current = io(apiUrl, {
-            auth: { token },
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
-            timeout: 10000
-        });
-
-        const socket = socketRef.current;
-
-        // Connection event handlers
-        socket.on('connect', () => {
-            console.log('🔌 Jackpot WebSocket connected');
+        const handleConnect = () => {
             setIsConnected(true);
             setConnectionStatus('connected');
-            reconnectAttempts.current = 0;
-        });
+        };
 
-        socket.on('disconnect', (reason) => {
-            console.log('❌ Jackpot WebSocket disconnected:', reason);
+        const handleDisconnect = () => {
             setIsConnected(false);
             setConnectionStatus('disconnected');
+        };
 
-            // Auto-reconnect with exponential backoff
-            if (reason === 'io server disconnect') {
-                // Server forced disconnect, try to reconnect manually
-                handleReconnect();
-            }
-        });
+        setIsConnected(!!socket.connected);
+        setConnectionStatus(socket.connected ? 'connected' : 'connecting');
 
-        socket.on('connect_error', (error) => {
-            console.error('🔴 Jackpot WebSocket connection error:', error.message);
-            setConnectionStatus('disconnected');
-            handleReconnect();
-        });
+        socket.on('connect', handleConnect);
+        socket.on('disconnect', handleDisconnect);
 
-        // Jackpot event listeners using the ref
-        socket.on('jackpot:ticket_sold', (data) => {
+        const handleTicketSold = (data: any) => {
             handlersRef.current.onTicketSold?.(data);
-        });
-
-        socket.on('jackpot:status_update', (data) => {
+        };
+        const handleStatusUpdate = (data: any) => {
             handlersRef.current.onStatusUpdate?.(data);
-        });
-
-        socket.on('jackpot:draw_complete', (data) => {
+        };
+        const handleDrawComplete = (data: any) => {
             handlersRef.current.onDrawComplete?.(data);
-        });
-
-        socket.on('jackpot:winner_announced', (data) => {
+        };
+        const handleWinnerAnnounced = (data: any) => {
             handlersRef.current.onWinnerAnnounced?.(data);
-        });
-
-        socket.on('jackpot:new_round', (data) => {
+        };
+        const handleNewRound = (data: any) => {
             handlersRef.current.onNewRound?.(data);
-        });
-
-        // Legacy event for backward compatibility
-        socket.on('lucky_draw_winner', (data) => {
+        };
+        const handleLegacyWinner = (data: any) => {
             handlersRef.current.onWinnerAnnounced?.(data);
-        });
+        };
 
-    }, [handleReconnect]);
+        socket.on('jackpot:ticket_sold', handleTicketSold);
+        socket.on('jackpot:status_update', handleStatusUpdate);
+        socket.on('jackpot:draw_complete', handleDrawComplete);
+        socket.on('jackpot:winner_announced', handleWinnerAnnounced);
+        socket.on('jackpot:new_round', handleNewRound);
+        socket.on('lucky_draw_winner', handleLegacyWinner);
 
-
-    const disconnect = useCallback(() => {
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-        }
-        if (socketRef.current) {
-            socketRef.current.removeAllListeners();
-            socketRef.current.disconnect();
-            socketRef.current = null;
-        }
-        setIsConnected(false);
-        setConnectionStatus('disconnected');
-    }, []);
-
-    // Auto-connect on mount
-    useEffect(() => {
-        connectRef.current = connect;
-        connect();
-        return () => disconnect();
-    }, [connect, disconnect]);
-
-    // Heartbeat to keep connection alive
-    useEffect(() => {
-        if (!isConnected) return;
-
-        const heartbeat = setInterval(() => {
-            if (socketRef.current?.connected) {
-                socketRef.current.emit('ping');
-            }
-        }, 30000); // Every 30 seconds
-
-        return () => clearInterval(heartbeat);
-    }, [isConnected]);
+        return () => {
+            socket.off('connect', handleConnect);
+            socket.off('disconnect', handleDisconnect);
+            socket.off('jackpot:ticket_sold', handleTicketSold);
+            socket.off('jackpot:status_update', handleStatusUpdate);
+            socket.off('jackpot:draw_complete', handleDrawComplete);
+            socket.off('jackpot:winner_announced', handleWinnerAnnounced);
+            socket.off('jackpot:new_round', handleNewRound);
+            socket.off('lucky_draw_winner', handleLegacyWinner);
+        };
+    }, [socket]);
 
     return {
         isConnected,
         connectionStatus,
-        reconnect: connect,
-        disconnect
+        reconnect: () => socket?.connect(),
+        disconnect: () => socket?.disconnect()
     };
 }

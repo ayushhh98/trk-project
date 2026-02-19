@@ -12,17 +12,70 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { socket } from "@/components/providers/Web3Provider";
+import { toast } from "sonner";
 
 export default function ActivationPage() {
-    const { address, user, deposit } = useWallet();
+    const { address, user, deposit, refreshUser } = useWallet();
     const [depositAmount, setDepositAmount] = useState('');
     const [isDepositing, setIsDepositing] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
     useEffect(() => {
         const timer = setTimeout(() => setIsLoading(false), 1000);
         return () => clearTimeout(timer);
     }, []);
+
+    // Real-time Socket.IO listeners for instant updates
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleBalanceUpdate = (data: any) => {
+            console.log('💰 Balance update received:', data);
+            refreshUser(); // Refresh user data from server
+            setLastUpdate(new Date());
+            toast.success(`Balance updated: +$${data.amount}`);
+        };
+
+        const handleDepositConfirmed = (data: any) => {
+            console.log('✅ Deposit confirmed:', data);
+            refreshUser();
+            setLastUpdate(new Date());
+            toast.success(`Deposit successful! Tier updated.`);
+        };
+
+        const handleActivationUpdate = (data: any) => {
+            console.log('🔓 Activation update:', data);
+            refreshUser();
+            setLastUpdate(new Date());
+            if (data.newTier) {
+                toast.success(`🎉 Upgraded to ${data.newTier.toUpperCase()}!`);
+            }
+        };
+
+        socket.on('balance_update', handleBalanceUpdate);
+        socket.on('deposit_confirmed', handleDepositConfirmed);
+        socket.on('activation_update', handleActivationUpdate);
+
+        return () => {
+            if (socket) {
+                socket.off('balance_update', handleBalanceUpdate);
+                socket.off('deposit_confirmed', handleDepositConfirmed);
+                socket.off('activation_update', handleActivationUpdate);
+            }
+        };
+    }, [socket, refreshUser]);
+
+    // Auto-refresh every 30 seconds to ensure data is up-to-date
+    useEffect(() => {
+        const interval = setInterval(() => {
+            refreshUser();
+            setLastUpdate(new Date());
+        }, 30000); // 30 seconds
+
+        return () => clearInterval(interval);
+    }, [refreshUser]);
 
     const activation = {
         tier: user?.activation?.tier || 'none',
@@ -96,6 +149,39 @@ export default function ActivationPage() {
                             <div className="text-[10px] font-mono text-zinc-500 tracking-[0.3em] uppercase opacity-50">Activation_Node_v4.2</div>
                         </div>
                     </div>
+
+                    {/* Real-Time Status Indicator */}
+                    <div className="flex items-center gap-4">
+                        <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-xl bg-white/5 border border-white/5">
+                            {/* Live Indicator */}
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                    <div className="absolute inset-0 w-2 h-2 rounded-full bg-green-500 animate-ping opacity-50" />
+                                </div>
+                                <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Live</span>
+                            </div>
+
+                            {/* Last Update Time */}
+                            <div className="h-4 w-px bg-white/10" />
+                            <span className="text-[10px] font-mono text-zinc-600">
+                                {lastUpdate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                        </div>
+
+                        {/* Manual Refresh Button */}
+                        <button
+                            onClick={() => {
+                                refreshUser();
+                                setLastUpdate(new Date());
+                                toast.success('Data refreshed');
+                            }}
+                            className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center hover:bg-primary/20 transition-all group border border-white/5 hover:border-primary/30"
+                            title="Refresh activation data"
+                        >
+                            <RefreshCcw className="h-4 w-4 text-zinc-500 group-hover:text-primary transition-colors group-hover:rotate-180 duration-500" />
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -133,8 +219,23 @@ export default function ActivationPage() {
                                     <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 border border-primary/10 group-hover/stats:scale-110 transition-transform">
                                         <Wallet className="h-8 w-8 text-primary shadow-primary" />
                                     </div>
-                                    <div className="text-5xl font-black text-white tracking-tighter mb-2">${activation.totalDeposited.toLocaleString('en-US')}</div>
-                                    <div className="text-[10px] font-mono text-zinc-500 tracking-widest uppercase">Aggregated_Liquidity_Volume</div>
+                                    <motion.div
+                                        key={activation.totalDeposited}
+                                        initial={{ scale: 1.1, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        className="text-5xl font-black text-white tracking-tighter mb-2"
+                                    >
+                                        ${activation.totalDeposited.toLocaleString('en-US')}
+                                    </motion.div>
+                                    <div className="text-[10px] font-mono text-zinc-500 tracking-widest uppercase flex items-center justify-center gap-2">
+                                        Aggregated_Liquidity_Volume
+                                        {/* Real-time pulse indicator */}
+                                        <motion.div
+                                            animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+                                            transition={{ duration: 2, repeat: Infinity }}
+                                            className="w-1.5 h-1.5 rounded-full bg-green-500"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -252,7 +353,7 @@ export default function ActivationPage() {
                                     <div className="space-y-3">
                                         <div className="flex justify-between text-[10px] font-mono">
                                             <span className="text-zinc-500 uppercase">SYNC_PROGRESS</span>
-                                            <span className="text-blue-400">${Math.min(activation.totalDeposited, 10)} / 10</span>
+                                            <span className="text-blue-400">${Math.min(activation.totalDeposited, tier1Threshold)} / {tier1Threshold}</span>
                                         </div>
                                         <div className="h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
                                             <motion.div
@@ -290,7 +391,7 @@ export default function ActivationPage() {
                                     <div className="space-y-3">
                                         <div className="flex justify-between text-[10px] font-mono">
                                             <span className="text-zinc-500 uppercase">SYNC_PROGRESS</span>
-                                            <span className="text-primary">${Math.min(activation.totalDeposited, 100)} / 100</span>
+                                            <span className="text-primary">${Math.min(activation.totalDeposited, tier2Threshold)} / {tier2Threshold}</span>
                                         </div>
                                         <div className="h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
                                             <motion.div

@@ -11,12 +11,12 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { roiOnRoiAPI } from "@/lib/api";
 
 export default function RoiOnRoiPage() {
-    const { address, realBalances, refreshUser } = useWallet();
+    const { address, realBalances, refreshUser, user } = useWallet();
     const [activeTab, setActiveTab] = useState<'analytics' | 'simulator' | 'levels'>('analytics');
     const [referralCount, setReferralCount] = useState(5);
     const [dailyCashback, setDailyCashback] = useState(0.50);
@@ -48,9 +48,9 @@ export default function RoiOnRoiPage() {
                     setStats({
                         todayEarnings: data.todayEarnings || 0,
                         totalEarnings: realBalances?.roiOnRoi || 0,
-                        unlockedLevels: data.unlockedLevels || 0,
+                        unlockedLevels: data.unlockedLevels || 0, // Now updates with user refresh
                         activeMembers: dashboardRes.data.teamStats?.totalTeamMembers || 0,
-                        growthRate: "+0%"
+                        growthRate: "+0%" // Backend calculation or memoized
                     });
                 }
 
@@ -69,7 +69,7 @@ export default function RoiOnRoiPage() {
         if (address) {
             fetchData();
         }
-    }, [address, realBalances?.roiOnRoi]);
+    }, [address, realBalances?.roiOnRoi, user?.teamStats?.totalMembers]); // Added dependency for real-time unlocking
 
     // Simulator logic
     const calculateSimulator = () => {
@@ -96,6 +96,25 @@ export default function RoiOnRoiPage() {
     const weeklyAggregate = yieldData && yieldData.length > 0
         ? yieldData.reduce((acc: number, curr: any) => acc + (Number(curr.value) || 0), 0)
         : 0;
+
+    // Calculate real-time metrics (NO FAKE DATA)
+    const yieldGrowthRate = useMemo(() => {
+        if (!yieldData || yieldData.length < 2) return "+0%";
+        const recent = yieldData.slice(-3).reduce((acc: number, curr: any) => acc + (Number(curr.value) || 0), 0);
+        const previous = yieldData.slice(0, 3).reduce((acc: number, curr: any) => acc + (Number(curr.value) || 0), 0);
+        if (previous === 0) return "+0%";
+        const growth = ((recent - previous) / previous) * 100;
+        return `${growth > 0 ? '+' : ''}${growth.toFixed(1)}%`;
+    }, [yieldData]);
+
+    const networkEfficiency = useMemo(() => {
+        if (!stats.activeMembers || stats.activeMembers === 0) return "0%";
+        // Efficiency = (unlocked levels / 15) * (active members participation rate)
+        const levelEfficiency = (stats.unlockedLevels / 15) * 100;
+        const membershipRate = Math.min((stats.activeMembers / 100) * 100, 100); // Cap at 100%
+        const combinedEfficiency = (levelEfficiency + membershipRate) / 2;
+        return `${combinedEfficiency.toFixed(1)}%`;
+    }, [stats.unlockedLevels, stats.activeMembers]);
 
     const handleDownloadReport = () => {
         if (!yieldData || yieldData.length === 0) {
@@ -313,12 +332,12 @@ export default function RoiOnRoiPage() {
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 text-center">
-                                                        <div className="text-xl font-bold text-emerald-400">+12%</div>
+                                                        <div className="text-xl font-bold text-emerald-400">{yieldGrowthRate}</div>
                                                         <div className="text-[9px] font-bold text-white/20 uppercase">Yield Growth</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 text-center">
-                                                        <div className="text-xl font-bold text-white">45.2%</div>
-                                                        <div className="text-[9px] font-bold text-white/20 uppercase">Efficiency</div>
+                                                        <div className="text-xl font-bold text-white">{networkEfficiency}</div>
+                                                        <div className="text-[9px] font-bold text-white/20 uppercase">Network Efficiency</div>
                                                     </div>
                                                 </div>
                                             </div>

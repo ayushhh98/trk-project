@@ -226,15 +226,15 @@ function CashDashboardContent() {
                                     </div>
                                     <div className="text-left">
                                         <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Total_Asset_Value</div>
-                                        <h3 className="text-xl font-bold text-white tracking-tight">Main Wallet Balance</h3>
+                                        <h3 className="text-xl font-bold text-white tracking-tight">Prime Ecosystem Balance</h3>
                                     </div>
                                 </div>
 
                                 <div className="text-6xl font-mono font-black text-white tracking-tighter shadow-emerald-500/20 drop-shadow-lg">
-                                    {hideBalances ? "****" : (realBalances.grandTotal || 0).toFixed(2)} <span className="text-2xl text-emerald-400">USDT</span>
+                                    {hideBalances ? "****" : (realBalances.totalUnified || 0).toFixed(2)} <span className="text-2xl text-emerald-400">USDT</span>
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-2 pt-4 border-t border-white/5">
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 mt-2 pt-4 border-t border-white/5">
                                     <div className="flex flex-col">
                                         <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Total_Deposited</span>
                                         <span className="text-sm font-mono font-bold text-white/60">{(user?.activation?.totalDeposited || 0).toFixed(2)} USDT</span>
@@ -246,6 +246,10 @@ function CashDashboardContent() {
                                     <div className="flex flex-col border-white/10 sm:border-l sm:pl-6">
                                         <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Cash_Balance_Vault</span>
                                         <span className="text-sm font-mono font-bold text-emerald-500/60">{(realBalances.cash || 0).toFixed(2)} USDT</span>
+                                    </div>
+                                    <div className="flex flex-col border-white/10 sm:border-l sm:pl-6">
+                                        <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">External_USDT_Wallet</span>
+                                        <span className="text-sm font-mono font-bold text-cyan-400/70">{parseFloat(usdtBalance || "0").toFixed(2)} USDT</span>
                                     </div>
                                 </div>
 

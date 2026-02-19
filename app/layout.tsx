@@ -18,13 +18,22 @@ export const metadata: Metadata = {
   description: "Play Smart. Earn Sustainably. The first no-loss blockchain gaming ecosystem.",
 };
 
+import { headers } from "next/headers";
+import { cookieToInitialState } from "wagmi";
+import { getWagmiConfig } from "@/config/wagmi";
 import AppProviders from "@/components/providers/AppProviders";
+import MaintenanceOverlay from "@/components/system/MaintenanceOverlay";
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const initialState = cookieToInitialState(
+    getWagmiConfig(),
+    (await headers()).get("cookie")
+  );
+
   return (
     <html lang="en" className="dark">
       <body
@@ -35,7 +44,10 @@ export default function RootLayout({
           src="https://accounts.google.com/gsi/client"
           strategy="beforeInteractive"
         />
-        <AppProviders>{children}</AppProviders>
+        <AppProviders initialState={initialState}>
+          <MaintenanceOverlay />
+          {children}
+        </AppProviders>
       </body>
     </html>
   );

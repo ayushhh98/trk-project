@@ -36,6 +36,10 @@ function generateResult(serverSeed, clientSeed, nonce, variant = 'dice', range =
             // 1-8 for dice
             return Number(hashInt % 8n) + 1;
 
+        case 'guess':
+            // 0-9 for number guess
+            return Number(hashInt % 10n);
+
         case 'spin':
             // 1-8 for neon spin segments
             return Number(hashInt % 8n) + 1;
@@ -120,6 +124,13 @@ function calculateOutcome(variant, pickedNumber, luckyNumber, betAmount) {
             // pickedNumber is target multiplier
             isWin = luckyNumber >= pickedNumber;
             multiplier = isWin ? pickedNumber : 0;
+            break;
+
+        case 'guess':
+            // luckyNumber is 0-9
+            // pickedNumber is 0-9
+            isWin = pickedNumber === luckyNumber;
+            multiplier = isWin ? 8 : 0;
             break;
     }
 

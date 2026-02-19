@@ -6,7 +6,7 @@
     "scripts": {
         "start": "node src/server.js",
         "dev": "nodemon src/server.js",
-        "clean-start": "for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :5002') do taskkill /F /PID %a & node src/server.js",
+        "clean-start": "for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :5000') do taskkill /F /PID %a & node src/server.js",
         "test": "jest --coverage",
         "test:watch": "jest --watch",
         "test:verbose": "jest --verbose"
@@ -44,7 +44,7 @@
         "morgan": "^1.10.0",
         "node-cron": "^4.2.1",
         "nodemailer": "^8.0.1",
-        "socket.io": "^4.8.3"
+        "socket.io": "^4.7.5"
     },
     "devDependencies": {
         "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",

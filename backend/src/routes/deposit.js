@@ -2,6 +2,7 @@ const express = require('express');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 const PlatformStats = require('../models/PlatformStats');
+const system = require('../config/system');
 
 const router = express.Router();
 const Notification = require('../models/Notification');
@@ -114,6 +115,10 @@ router.get('/status', auth, async (req, res) => {
 // Make a deposit
 router.post('/deposit', auth, async (req, res) => {
     try {
+        if (system.get().emergencyFlags.pauseDeposits) {
+            return res.status(503).json({ status: 'error', message: 'Deposits are currently paused.' });
+        }
+
         const { amount, txHash } = req.body;
 
         if (!amount || amount < 1.5) {
@@ -171,15 +176,44 @@ router.post('/deposit', auth, async (req, res) => {
         // Notify User of balance change and broadcast turnover update
         const io = req.app.get('io');
         if (io) {
+            const nowIso = new Date().toISOString();
             io.emit('platform:turnover_update', {
                 dailyTurnover: updatedStats.dailyTurnover,
                 totalTurnover: updatedStats.totalTurnover
             });
 
+            const depositEvent = {
+                id: txHash || `dep_${user._id.toString()}_${Date.now()}`,
+                type: 'deposit',
+                walletAddress: user.walletAddress || '',
+                amount: Number(amount) || 0,
+                txHash: txHash || null,
+                status: 'confirmed',
+                createdAt: nowIso,
+                note: `tier_${user.activation?.tier || 'none'}_deposit`
+            };
+            io.emit('transaction_created', depositEvent);
+            io.emit('new_deposit', depositEvent);
+
+            // 1. Balance Update
             io.to(user._id.toString()).emit('balance_update', {
                 type: 'deposit',
                 amount: amount,
                 newBalance: user.realBalances.game
+            });
+
+            // 2. Deposit Confirmed (Triggers ActivationPage refresh)
+            io.to(user._id.toString()).emit('deposit_confirmed', {
+                amount: amount,
+                txHash: txHash,
+                newTotalDeposited: user.activation.totalDeposited
+            });
+
+            // 3. Activation/Tier Update
+            io.to(user._id.toString()).emit('activation_update', {
+                tier: user.activation.tier,
+                totalDeposited: user.activation.totalDeposited,
+                newTier: user.activation.tier !== 'none' ? user.activation.tier : null
             });
 
             // Create notification record
@@ -215,7 +249,6 @@ router.post('/deposit', auth, async (req, res) => {
             }
         }
 
-
         // Determine what was unlocked
         const newlyUnlocked = [];
         if (user.activation.tier === 'tier1' && user.activation.totalDeposited >= 10 && user.activation.totalDeposited < 100) {
@@ -246,7 +279,6 @@ router.post('/deposit', auth, async (req, res) => {
                 }
             }
         });
-
     } catch (error) {
         console.error('Deposit error:', error);
         res.status(500).json({
@@ -325,6 +357,10 @@ const { requireFreshAuth } = require('../middleware/freshAuth');
 // Withdraw funds (Protected: Requires fresh authentication + rate limiting)
 router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, async (req, res) => {
     try {
+        if (system.get().emergencyFlags.pauseWithdrawals) {
+            return res.status(503).json({ status: 'error', message: 'Withdrawals are currently paused.' });
+        }
+
         const { walletType, amount, toAddress } = req.body;
         const user = await User.findById(req.user.id);
 
@@ -406,6 +442,19 @@ router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, async (req, 
         // Notify User of balance change
         const io = req.app.get('io');
         if (io) {
+            const withdrawalEvent = {
+                id: `wd_${user._id.toString()}_${Date.now()}`,
+                type: 'withdrawal',
+                walletAddress: user.walletAddress || '',
+                amount: Number(amount) || 0,
+                txHash: null,
+                status: 'confirmed',
+                createdAt: new Date().toISOString(),
+                note: `${walletType}_withdrawal`
+            };
+            io.emit('transaction_created', withdrawalEvent);
+            io.emit('withdrawal_processed', withdrawalEvent);
+
             io.to(user._id.toString()).emit('balance_update', {
                 type: 'withdrawal',
                 walletType: walletType,

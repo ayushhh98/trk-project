@@ -395,6 +395,9 @@ function validatePickedNumber(variant, pickedNumber) {
         case 'dice':
             return Number.isInteger(pickedNumber) && pickedNumber >= 1 && pickedNumber <= 8;
 
+        case 'guess':
+            return Number.isInteger(pickedNumber) && pickedNumber >= 0 && pickedNumber <= 9;
+
         case 'spin':
             if (Array.isArray(pickedNumber)) {
                 return pickedNumber.every(n => Number.isInteger(n) && n >= 1 && n <= 8);

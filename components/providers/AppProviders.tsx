@@ -7,9 +7,9 @@ import { ReferralTracker } from "@/components/referral/ReferralTracker";
 import { ReferralOnboarding } from "@/components/referral/ReferralOnboarding";
 import { Toaster } from "sonner";
 
-export default function AppProviders({ children }: { children: ReactNode }) {
+export default function AppProviders({ children, initialState }: { children: ReactNode, initialState?: any }) {
     return (
-        <Web3Provider>
+        <Web3Provider initialState={initialState}>
             <WalletProvider>
                 <Suspense fallback={null}>
                     <ReferralTracker />

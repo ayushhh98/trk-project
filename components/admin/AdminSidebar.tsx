@@ -14,7 +14,14 @@ import {
     Menu,
     X,
     ChevronRight,
-    ShieldCheck
+    ShieldCheck,
+    Receipt,
+    ShieldAlert,
+    Settings,
+    Crown,
+    Gamepad2,
+    FileText,
+    BarChart3
 } from "lucide-react";
 import { useState } from "react";
 import { useWallet } from "@/components/providers/WalletProvider";
@@ -28,13 +35,44 @@ interface AdminSidebarProps {
     onTabChange: (tab: string) => void;
 }
 
-const menuItems = [
-    { id: "overview", label: "Overview", icon: LayoutDashboard },
-    { id: "users", label: "User Management", icon: Users },
-    { id: "wallet", label: "Wallet Control", icon: Wallet },
-    { id: "finance", label: "Financials", icon: DollarSign },
-    { id: "jackpot", label: "Jackpot Engine", icon: Gift, badge: "Live" },
+const menuGroups = [
+    {
+        label: "Core",
+        items: [
+            { id: "overview", label: "Overview", icon: LayoutDashboard },
+            { id: "users", label: "User Management", icon: Users },
+            { id: "wallet", label: "Wallet Control", icon: Wallet },
+        ]
+    },
+    {
+        label: "Finance",
+        items: [
+            { id: "transactions", label: "Transactions", icon: Receipt, badge: "New" },
+            { id: "finance", label: "Financials", icon: DollarSign },
+            { id: "jackpot", label: "Jackpot Engine", icon: Gift, badge: "Live" },
+            { id: "club", label: "Club Monitor", icon: Crown, badge: "New" },
+        ]
+    },
+    {
+        label: "System",
+        items: [
+            { id: "practice", label: "Practice Control", icon: Gamepad2, badge: "New" },
+
+            { id: "analytics", label: "Analytics", icon: BarChart3 },
+        ]
+    },
+    {
+        label: "Security & Legal",
+        items: [
+            { id: "emergency", label: "Emergency", icon: ShieldAlert, badge: "⚡" },
+            { id: "legal", label: "Legal & Compliance", icon: FileText, badge: "New" },
+        ]
+    }
 ];
+
+// Flat list for backward compatibility
+const menuItems = menuGroups.flatMap(g => g.items);
+
 
 export function AdminSidebar({ activeTab, onTabChange }: AdminSidebarProps) {
     const router = useRouter();
@@ -92,63 +130,69 @@ export function AdminSidebar({ activeTab, onTabChange }: AdminSidebarProps) {
 
                     {/* Menu Navigation */}
                     <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar pb-8">
-                        {menuItems.map((item) => {
-                            const isActive = activeTab === item.id;
-                            return (
-                                <button
-                                    key={item.id}
-                                    onClick={() => {
-                                        onTabChange(item.id);
-                                        setIsOpen(false);
-                                    }}
-                                    className={cn(
-                                        "w-full flex items-center justify-between px-5 py-3.5 rounded-2xl text-xs font-black transition-all duration-300 group relative overflow-hidden",
-                                        isActive
-                                            ? "bg-gradient-to-r from-primary/20 to-transparent text-primary border border-primary/20"
-                                            : "text-zinc-500 hover:text-white hover:bg-white/[0.03] border border-transparent"
-                                    )}
-                                >
-                                    <div className="flex items-center gap-4 relative z-10">
-                                        <div className={cn(
-                                            "p-2 rounded-xl transition-all duration-300",
-                                            isActive ? "bg-primary text-black" : "bg-zinc-900 text-zinc-600 group-hover:text-primary group-hover:bg-primary/10"
-                                        )}>
-                                            <item.icon className="h-4.5 w-4.5" />
-                                        </div>
-                                        <span className="uppercase tracking-widest text-left">{item.label}</span>
-                                    </div>
+                        {menuGroups.map((group) => (
+                            <div key={group.label} className="mb-4">
+                                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/15 px-5 py-2">{group.label}</p>
+                                {group.items.map((item) => {
+                                    const isActive = activeTab === item.id;
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => {
+                                                onTabChange(item.id);
+                                                setIsOpen(false);
+                                            }}
+                                            className={cn(
+                                                "w-full flex items-center justify-between px-5 py-3 rounded-2xl text-xs font-black transition-all duration-300 group relative overflow-hidden mb-0.5",
+                                                isActive
+                                                    ? "bg-gradient-to-r from-primary/20 to-transparent text-primary border border-primary/20"
+                                                    : "text-zinc-500 hover:text-white hover:bg-white/[0.03] border border-transparent"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-3 relative z-10">
+                                                <div className={cn(
+                                                    "p-1.5 rounded-xl transition-all duration-300",
+                                                    isActive ? "bg-primary text-black" : "bg-zinc-900 text-zinc-600 group-hover:text-primary group-hover:bg-primary/10"
+                                                )}>
+                                                    <item.icon className="h-3.5 w-3.5" />
+                                                </div>
+                                                <span className="uppercase tracking-widest text-left text-[10px]">{item.label}</span>
+                                            </div>
 
-                                    <div className="flex items-center gap-2 relative z-10">
-                                        {item.badge && (
-                                            <span className={cn(
-                                                "px-2 py-0.5 rounded-md text-[8px] font-mono tracking-tighter uppercase",
-                                                isActive ? "bg-primary/20 text-primary" : "bg-white/5 text-zinc-600"
-                                            )}>
-                                                {item.badge}
-                                            </span>
-                                        )}
-                                        {isActive && (
-                                            <motion.div
-                                                layoutId="activeChevron"
-                                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                            >
-                                                <ChevronRight className="h-3 w-3 text-primary" />
-                                            </motion.div>
-                                        )}
-                                    </div>
+                                            <div className="flex items-center gap-2 relative z-10">
+                                                {(item as any).badge && (
+                                                    <span className={cn(
+                                                        "px-1.5 py-0.5 rounded-md text-[7px] font-mono tracking-tighter uppercase",
+                                                        isActive ? "bg-primary/20 text-primary" : "bg-white/5 text-zinc-600"
+                                                    )}>
+                                                        {(item as any).badge}
+                                                    </span>
+                                                )}
+                                                {isActive && (
+                                                    <motion.div
+                                                        layoutId="activeChevron"
+                                                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                                    >
+                                                        <ChevronRight className="h-3 w-3 text-primary" />
+                                                    </motion.div>
+                                                )}
+                                            </div>
 
-                                    {/* Active Pulse Glow */}
-                                    {isActive && (
-                                        <motion.div
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 0.15 }}
-                                            className="absolute inset-0 bg-primary/20 blur-2xl"
-                                        />
-                                    )}
-                                </button>
-                            );
-                        })}
+                                            {/* Active Pulse Glow */}
+                                            {isActive && (
+                                                <motion.div
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 0.15 }}
+                                                    className="absolute inset-0 bg-primary/20 blur-2xl"
+                                                />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ))}
                     </nav>
+
 
                     <div className="p-6 mt-auto border-t border-white/5 bg-black/40 backdrop-blur-3xl space-y-6">
                         <div className="p-4 rounded-xl bg-white/5 border border-white/5">

@@ -19,16 +19,14 @@ interface LaunchPosterProps {
 }
 
 export function LaunchPoster({
-    title = "Lucky Draw Jackpot",
-    description = "Enter the next draw and secure a share of the protocol prize pool.",
+    title,
+    description,
     link = "/dashboard/lucky-draw",
-    stats = [
-        { label: "Prize Pool", value: "$25,000" },
-        { label: "Tickets", value: "Unlimited" },
-        { label: "Draw", value: "Daily" }
-    ],
+    stats = [],
     imageUrl
 }: LaunchPosterProps) {
+    if (!title) return null; // Don't render if no title is provided (ensures no fake data)
+
     const defaultCards = [
         { color: "from-amber-500/20 to-orange-500/20", border: "border-amber-500/30" },
         { color: "from-orange-500/20 to-red-500/20", border: "border-orange-500/30" },

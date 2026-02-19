@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Commission = require('../models/Commission');
 
 const getReferralSignupBonus = () => {
     const bonus = Number(process.env.REFERRAL_SIGNUP_BONUS || 10);
@@ -26,20 +27,34 @@ const awardReferralSignupBonus = async ({ referrerId, referredUserId, io }) => {
         referrer.teamStats.totalMembers += 1;
     }
 
-    if (!referrer.realBalances) referrer.realBalances = {};
-    if (typeof referrer.realBalances.directLevel !== 'number') {
-        referrer.realBalances.directLevel = 0;
-    }
-
     const bonus = getReferralSignupBonus();
-    referrer.realBalances.directLevel += bonus;
+
     await referrer.save();
 
+    let commissionRecord = null;
+    try {
+        const referredUser = await User.findById(referredUserId).select('walletAddress').lean();
+        commissionRecord = await Commission.create({
+            user: referrer._id,
+            fromUser: referredUserId,
+            amount: bonus,
+            level: 1,
+            type: 'signup_bonus',
+            recipientWallet: referrer.walletAddress || null,
+            sourceWallet: referredUser?.walletAddress || null,
+            status: 'credited'
+        });
+    } catch (error) {
+        console.error('Failed to log signup bonus commission:', error);
+    }
+
     if (io) {
+        const emittedAt = new Date();
         io.to(referrer._id.toString()).emit('balance_update', {
             type: 'referral_bonus',
+            walletType: 'practice',
             amount: bonus,
-            newBalance: referrer.realBalances.directLevel
+            newBalance: referrer.practiceBalance || 0
         });
 
         io.to(referrer._id.toString()).emit('referral_activity', {
@@ -47,7 +62,28 @@ const awardReferralSignupBonus = async ({ referrerId, referredUserId, io }) => {
             userId: referredUserId,
             amount: bonus,
             userName: 'New referral',
-            timestamp: new Date()
+            timestamp: emittedAt
+        });
+
+        io.emit('transaction_created', {
+            id: commissionRecord?._id?.toString() || `signup_${referrer._id.toString()}_${Date.now()}`,
+            type: 'referral',
+            walletAddress: referrer.walletAddress || '',
+            amount: bonus,
+            txHash: null,
+            status: 'confirmed',
+            createdAt: commissionRecord?.createdAt || emittedAt,
+            note: 'signup_bonus'
+        });
+        io.emit('referral_commission_created', {
+            id: commissionRecord?._id?.toString() || `signup_${referrer._id.toString()}_${Date.now()}`,
+            type: 'referral',
+            walletAddress: referrer.walletAddress || '',
+            amount: bonus,
+            txHash: null,
+            status: 'confirmed',
+            createdAt: commissionRecord?.createdAt || emittedAt,
+            note: 'signup_bonus'
         });
     }
 

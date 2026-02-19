@@ -28,10 +28,10 @@ const footerLinks = {
         { name: "Media Kit", href: "#" },
     ],
     legal: [
-        { name: "Terms of Service", href: "#" },
-        { name: "Privacy Policy", href: "#" },
-        { name: "Risk Disclosure", href: "#" },
-        { name: "Cookie Policy", href: "#" },
+        { name: "Terms of Service", href: "/legal/terms" },
+        { name: "Privacy Policy", href: "/legal/privacy_policy" },
+        { name: "Risk Disclosure", href: "/legal/risk_disclaimer" },
+        { name: "Cookie Policy", href: "/legal/cookie_policy" },
     ]
 };
 

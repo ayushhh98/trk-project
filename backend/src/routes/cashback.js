@@ -79,11 +79,12 @@ const getEarningsCap = async (boostTierMultiplier) => {
 };
 
 // Referral Cashback Boost tiers (Based on qualified referral count)
+// Specification-compliant caps: 100%, 200%, 400%, 800%
 const REFERRAL_BOOST_TIERS = [
-    { minReferrals: 0, multiplier: 1, name: 'Tier 1X', baseProfitCap: 4 },       // 0 Referrals: 1X (400%)
-    { minReferrals: 5, multiplier: 2, name: 'Tier 2X', baseProfitCap: 6 },       // 5 Referrals: 2X (600%)
-    { minReferrals: 10, multiplier: 4, name: 'Tier 4X', baseProfitCap: 8 },      // 10 Referrals: 4X (800%)
-    { minReferrals: 20, multiplier: 8, name: 'Tier 8X', baseProfitCap: 10 },     // 20 Referrals: 8X (1000%)
+    { minReferrals: 0, multiplier: 1, name: 'Tier 1X', baseProfitCap: 1 },       // 0 Referrals: 1X (100%)
+    { minReferrals: 5, multiplier: 2, name: 'Tier 2X', baseProfitCap: 2 },       // 5 Referrals: 2X (200%)
+    { minReferrals: 10, multiplier: 4, name: 'Tier 4X', baseProfitCap: 4 },      // 10 Referrals: 4X (400%)
+    { minReferrals: 20, multiplier: 8, name: 'Tier 8X', baseProfitCap: 8 },      // 20 Referrals: 8X (800%)
 ];
 
 // Get current phase based on user count

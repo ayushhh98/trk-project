@@ -95,4 +95,50 @@ router.get('/stats', auth, async (req, res) => {
     }
 });
 
+// GET /api/user/wallet/inflows?address=0x...&limit=20
+// Proxies BSCScan to get USDT inflows for a wallet — avoids client-side getLogs RPC issues
+router.get('/wallet/inflows', async (req, res) => {
+    try {
+        const { address, limit = 20 } = req.query;
+
+        if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid address' });
+        }
+
+        const usdtAddress = process.env.USDT_CONTRACT_ADDRESS || '0x55d398326f99059fF775485246999027B3197955';
+        const apiKey = process.env.ETHERSCAN_API_KEY || process.env.BSCSCAN_API_KEY || '';
+        const explorerBase = process.env.ETHERSCAN_API_URL || 'https://api.bscscan.com/api';
+
+        const params = new URLSearchParams({
+            module: 'account',
+            action: 'tokentx',
+            contractaddress: usdtAddress,
+            address: address,
+            sort: 'desc',
+            offset: String(Math.min(Number(limit), 50)),
+            page: '1',
+            ...(apiKey ? { apikey: apiKey } : {})
+        });
+
+        const response = await fetch(`${explorerBase}?${params.toString()}`);
+        const data = await response.json();
+
+        if (data.status === '1' && Array.isArray(data.result)) {
+            // Filter to only inflows (to == address)
+            const inflows = data.result.filter(
+                (tx) => tx.to?.toLowerCase() === address.toLowerCase()
+            );
+            return res.json({ status: 'success', transactions: inflows });
+        }
+
+        // BSCScan returned no results or error — return empty (not a server error)
+        return res.json({ status: 'success', transactions: [] });
+
+    } catch (error) {
+        console.error('Wallet inflows error:', error);
+        // Return empty rather than 500 — client handles gracefully
+        res.json({ status: 'success', transactions: [] });
+    }
+});
+
 module.exports = router;

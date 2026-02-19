@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePublicClient } from "wagmi";
-import { parseAbiItem, formatUnits } from "viem";
+import { formatUnits, isAddress } from "viem";
 import { ERC20ABI } from "@/config/abis";
 import { useWallet } from "@/components/providers/WalletProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { format } from "date-fns";
 import { History, ExternalLink, ArrowDownCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSocket } from "@/components/providers/Web3Provider";
 
 type LedgerEntry = {
     source: "game" | "wallet";
@@ -20,6 +21,7 @@ type LedgerEntry = {
 
 export function DepositHistoryTable() {
     const { deposits, isLoading, address, addresses, currentChainId } = useWallet();
+    const socket = useSocket();
     const publicClient = usePublicClient();
     const [walletInflows, setWalletInflows] = useState<LedgerEntry[]>([]);
     const [isWalletSyncing, setIsWalletSyncing] = useState(false);
@@ -34,121 +36,119 @@ export function DepositHistoryTable() {
         return addr as `0x${string}`;
     }, [addresses?.USDT]);
 
-    const hydrateLogs = async (logs: any[]) => {
-        if (!publicClient) return [];
-        if (!logs.length) return [];
-
-        const uniqueBlocks = Array.from(
-            new Set(
-                logs
-                    .map((l) => l.blockNumber)
-                    .filter((bn): bn is bigint => typeof bn === "bigint")
-            )
-        );
-        const blockMap = new Map<string, bigint>();
-        await Promise.all(uniqueBlocks.map(async (blockNumber: bigint) => {
-            const block = await publicClient.getBlock({ blockNumber });
-            blockMap.set(blockNumber.toString(), block.timestamp);
-        }));
-
-        return logs.map((log) => {
-            const value = (log.args?.value ?? 0n) as bigint;
-            const amount = Number(formatUnits(value, 18));
-            const ts = log.blockNumber ? blockMap.get(log.blockNumber.toString()) : undefined;
-            const createdAt = ts ? new Date(Number(ts) * 1000).toISOString() : new Date().toISOString();
-
-            return {
-                source: "wallet",
-                amount,
-                createdAt,
-                txHash: log.transactionHash
-            } as LedgerEntry;
-        });
-    };
-
+    // â”€â”€ Fetch historical inflows via backend (avoids all public RPC getLogs issues) â”€â”€
     useEffect(() => {
-        if (!publicClient || !address || !usdtAddress) return;
+        if (!address || !isAddress(address)) {
+            setIsWalletSyncing(false);
+            return;
+        }
 
         let cancelled = false;
-        const fetchRecent = async () => {
-            setIsWalletSyncing(true);
+        setIsWalletSyncing(true);
+
+        const fetchFromBackend = async () => {
+            // Safety timeout: unblock UI after 8s regardless
+            const syncTimeout = setTimeout(() => {
+                if (!cancelled) setIsWalletSyncing(false);
+            }, 8_000);
+
             try {
-                const latest = await publicClient.getBlockNumber();
-                const lookback = 10000n;
-                const fromBlock = latest > lookback ? latest - lookback : 0n;
-                const logs = await publicClient.getLogs({
-                    address: usdtAddress,
-                    event: parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)"),
-                    args: { to: address as `0x${string}` },
-                    fromBlock,
-                    toBlock: latest
-                });
+                const token = localStorage.getItem("trk_token");
+                const headers: Record<string, string> = {};
+                if (token) headers["Authorization"] = `Bearer ${token}`;
 
-                const sorted = [...logs].sort((a: any, b: any) => {
-                    const aBlock = a.blockNumber ?? 0n;
-                    const bBlock = b.blockNumber ?? 0n;
-                    if (aBlock === bBlock) return Number((b.logIndex ?? 0) - (a.logIndex ?? 0));
-                    return Number(bBlock - aBlock);
-                });
+                // Backend proxies BSCScan â€” no RPC getLogs needed
+                const res = await fetch(
+                    `/api/users/wallet/inflows?address=${address}&limit=20`,
+                    { headers }
+                );
 
-                const trimmed = sorted.slice(0, 20);
-                const entries = await hydrateLogs(trimmed);
+                if (cancelled) return;
 
-                if (!cancelled) {
-                    setWalletInflows(entries);
-                    seenTxsRef.current = new Set(entries.map((e) => e.txHash || ""));
+                if (res.ok) {
+                    const data = await res.json();
+                    const inflows: LedgerEntry[] = (data.transactions || []).map((tx: any) => ({
+                        source: "wallet" as const,
+                        amount: parseFloat(tx.value || tx.amount || "0"),
+                        createdAt: tx.timeStamp
+                            ? new Date(Number(tx.timeStamp) * 1000).toISOString()
+                            : (tx.createdAt || new Date().toISOString()),
+                        txHash: tx.hash || tx.txHash
+                    }));
+                    if (!cancelled) {
+                        setWalletInflows(inflows);
+                        seenTxsRef.current = new Set(inflows.map(e => e.txHash || ""));
+                    }
                 }
+                // If endpoint 404s, silently fall through â€” backend deposits still show
             } catch (err: any) {
                 if (!cancelled) {
-                    console.error("Failed to load wallet inflows:", err);
+                    console.warn("[Ledger] Could not fetch wallet inflows:", err.message);
                 }
             } finally {
+                clearTimeout(syncTimeout);
                 if (!cancelled) setIsWalletSyncing(false);
             }
         };
 
-        fetchRecent();
-        return () => {
-            cancelled = true;
-        };
-    }, [publicClient, address, usdtAddress]);
+        fetchFromBackend();
+        return () => { cancelled = true; };
+    }, [address]);
 
+    // â”€â”€ Live watch for new incoming transfers (Server-Side Source of Truth via Socket) â”€â”€
     useEffect(() => {
-        if (!publicClient || !address || !usdtAddress) return;
+        if (!socket) return;
 
-        const unwatch = publicClient.watchContractEvent({
-            address: usdtAddress,
-            abi: ERC20ABI,
-            eventName: "Transfer",
-            args: { to: address as `0x${string}` },
-            onLogs: async (logs) => {
-                const entries = await hydrateLogs(logs);
-                setWalletInflows((prev) => {
-                    const next = [...entries, ...prev];
-                    const deduped: LedgerEntry[] = [];
-                    const seen = new Set<string>();
-                    for (const item of next) {
-                        if (!item.txHash) continue;
-                        if (seen.has(item.txHash)) continue;
-                        seen.add(item.txHash);
-                        deduped.push(item);
-                    }
-                    seenTxsRef.current = new Set(seen);
-                    return deduped.slice(0, 50);
-                });
-            }
+        const handleNewDeposit = (data: any) => {
+            // Filter for current user's wallet
+            if (!address || (data.walletAddress && data.walletAddress.toLowerCase() !== address.toLowerCase())) return;
+
+            const newEntry: LedgerEntry = {
+                source: "wallet",
+                amount: typeof data.amount === 'number' ? data.amount : parseFloat(data.amount),
+                createdAt: data.createdAt || new Date().toISOString(),
+                txHash: data.txHash || `socket_dep_${Date.now()}`
+            };
+
+            setWalletInflows(prev => {
+                const next = [newEntry, ...prev];
+                // Dedupe
+                const seen = new Set<string>();
+                const deduped: LedgerEntry[] = [];
+                for (const item of next) {
+                    if (!item.txHash || seen.has(item.txHash)) continue;
+                    seen.add(item.txHash);
+                    deduped.push(item);
+                }
+                seenTxsRef.current = new Set(seen);
+                return deduped.slice(0, 50);
+            });
+
+            // Flash live indicator
+            setIsLive(true);
+            setTimeout(() => setIsLive(false), 3000);
+        };
+
+        socket.on('new_deposit', handleNewDeposit);
+        // Also listen for generic transaction_created if type is deposit
+        socket.on('transaction_created', (data: any) => {
+            if (data.type === 'deposit') handleNewDeposit(data);
         });
 
-        setIsLive(true);
+        // Set live state to true if socket is connected
+        if (socket.connected) setIsLive(true);
+
         return () => {
-            setIsLive(false);
-            if (unwatch) unwatch();
+            if (socket) {
+                socket.off('new_deposit', handleNewDeposit);
+                socket.off('transaction_created');
+            }
         };
-    }, [publicClient, address, usdtAddress]);
+    }, [address, socket]);
 
     const entries: LedgerEntry[] = useMemo(() => {
         const fromBackend = (deposits || []).map((item) => ({
-            source: "game",
+            source: "game" as const,
             amount: item.amount,
             createdAt: item.createdAt,
             txHash: item.txHash
@@ -158,7 +158,7 @@ export function DepositHistoryTable() {
         );
     }, [deposits, walletInflows]);
 
-    if ((isLoading || isWalletSyncing) && entries.length === 0) {
+    if (isLoading && entries.length === 0) {
         return (
             <Card className="bg-black/40 backdrop-blur-xl border-white/5">
                 <CardContent className="p-8 text-center text-white/20 uppercase tracking-[0.2em] font-black text-[10px] animate-pulse">
@@ -201,7 +201,7 @@ export function DepositHistoryTable() {
                             "h-2 w-2 rounded-full",
                             isLive ? "bg-emerald-500 animate-pulse" : "bg-white/10"
                         )} />
-                        <span className="text-white/30">{isLive ? "Live Feed" : "Syncing"}</span>
+                        <span className="text-white/30">{isLive ? "Live Feed" : isWalletSyncing ? "Syncing" : "Ready"}</span>
                     </div>
                 </div>
             </CardHeader>
@@ -276,3 +276,5 @@ export function DepositHistoryTable() {
         </Card>
     );
 }
+
+

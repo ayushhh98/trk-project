@@ -328,19 +328,19 @@ userSchema.pre('save', async function (next) {
         this.password = await bcrypt.hash(this.password, 10);
     }
 
-    if (this.walletAddress) {
-        // If no code or legacy derived code, generate new TRK style
+    if (!this.referralCode) {
+        const code = await generateUniqueWalletReferralCode(this);
+        if (code) this.referralCode = code;
+    } else if (this.walletAddress) {
+        // If legacy derived code, upgrade to TRK style
         const legacyCode = this.walletAddress.slice(2, 8).toUpperCase();
         const isLegacy = this.referralCode === legacyCode;
-        const isDerived = this.referralCode && !this.referralCode.startsWith('TRK');
+        const isDerived = !this.referralCode.startsWith('TRK');
 
-        if (!this.referralCode || isLegacy || isDerived) {
+        if (isLegacy || isDerived) {
             const code = await generateUniqueWalletReferralCode(this);
             if (code) this.referralCode = code;
         }
-    } else if (!this.referralCode && this.email) {
-        const code = await generateUniqueWalletReferralCode(this);
-        if (code) this.referralCode = code;
     }
 
     this.updatedAt = Date.now();

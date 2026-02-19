@@ -59,9 +59,24 @@ const ensureRealBalances = (user) => {
     if (typeof user.realBalances.teamWinners !== 'number') user.realBalances.teamWinners = 0;
 };
 
+const emitAdminReferralTransaction = (payload) => {
+    try {
+        const io = require('../server').io;
+        if (!io) return;
+        io.emit('transaction_created', payload);
+        io.emit('referral_commission_created', payload);
+    } catch (error) {
+        // Avoid breaking commission distribution due to socket issues.
+    }
+};
+
 const distributeDepositCommissions = async (userId, depositAmount) => {
     try {
         let currentUser = await User.findById(userId);
+        // Real referral commission starts only after the depositing user is activated.
+        if (!currentUser?.activation || !['tier1', 'tier2'].includes(currentUser.activation.tier)) {
+            return;
+        }
         let currentLevel = 1;
 
         while (currentUser?.referredBy && currentLevel <= 15) {
@@ -92,13 +107,27 @@ const distributeDepositCommissions = async (userId, depositAmount) => {
 
                     // Log commission
                     try {
-                        await Commission.create({
+                        const commissionRecord = await Commission.create({
                             user: upline._id,
                             fromUser: userId,
                             amount: commission,
                             level: currentLevel,
                             type: 'deposit_commission',
+                            recipientWallet: upline.walletAddress || null,
+                            sourceWallet: currentUser.walletAddress || null,
                             status: 'credited'
+                        });
+
+                        emitAdminReferralTransaction({
+                            id: commissionRecord._id.toString(),
+                            type: 'referral',
+                            walletAddress: upline.walletAddress || '',
+                            fromWallet: currentUser.walletAddress || '',
+                            amount: commission,
+                            txHash: null,
+                            status: 'confirmed',
+                            createdAt: commissionRecord.createdAt,
+                            note: `deposit_commission_l${currentLevel}`
                         });
                     } catch (logError) {
                         console.error('Failed to log deposit commission:', logError);
@@ -146,13 +175,27 @@ const distributeWinnerCommissions = async (winnerId, winAmount) => {
 
                     // Log commission
                     try {
-                        await Commission.create({
+                        const commissionRecord = await Commission.create({
                             user: upline._id,
                             fromUser: winnerId,
                             amount: commission,
                             level: currentLevel,
                             type: 'winner_commission',
+                            recipientWallet: upline.walletAddress || null,
+                            sourceWallet: currentUser.walletAddress || null,
                             status: 'credited'
+                        });
+
+                        emitAdminReferralTransaction({
+                            id: commissionRecord._id.toString(),
+                            type: 'referral',
+                            walletAddress: upline.walletAddress || '',
+                            fromWallet: currentUser.walletAddress || '',
+                            amount: commission,
+                            txHash: null,
+                            status: 'confirmed',
+                            createdAt: commissionRecord.createdAt,
+                            note: `winner_commission_l${currentLevel}`
                         });
                     } catch (logError) {
                         console.error('Failed to log winner commission:', logError);

@@ -34,8 +34,7 @@ import {
   Activity,
   Lock,
   Plus,
-  Minus,
-  AlertCircle
+  Minus
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -185,14 +184,8 @@ const faqs = [
 ];
 
 export default function Home() {
-  const { isConnected, user, connect, registerOnChain, isRegisteredOnChain } = useWallet();
+  const { isConnected, user, connect, login, isRegisteredOnChain } = useWallet();
   const router = useRouter();
-  const [refCode, setRefCode] = useState("");
-  const [refStatus, setRefStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
-  const [referrerAddress, setReferrerAddress] = useState<string | null>(null);
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [pendingRedirect, setPendingRedirect] = useState(false);
-  const [pendingRegister, setPendingRegister] = useState(false);
   const [openFAQ, setOpenFAQ] = useState<number | null>(null);
 
   useEffect(() => {
@@ -203,100 +196,6 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.location.hash === "#join") {
-      const joinSection = document.getElementById("join");
-      if (joinSection) {
-        joinSection.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem("trk_referrer_code");
-    if (stored) {
-      setRefCode(stored);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!pendingRedirect) return;
-    if (isRegisteredOnChain) {
-      setPendingRedirect(false);
-      router.replace("/dashboard");
-    }
-  }, [pendingRedirect, isRegisteredOnChain, router]);
-
-  const resolveReferrer = async (code: string) => {
-    const trimmed = code.trim();
-    if (!trimmed) return null;
-    const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/api\/?$/, "");
-    try {
-      const res = await fetch(`${apiBase}/api/referral/resolve/${trimmed}`);
-      const data = await res.json();
-      if (data?.status === "success" && data?.data?.walletAddress) {
-        return data.data.walletAddress as string;
-      }
-    } catch (err) {
-      console.error("Referral resolve failed:", err);
-    }
-    return null;
-  };
-
-  const validateReferral = async () => {
-    const trimmed = refCode.trim();
-    if (!trimmed) {
-      setRefStatus("invalid");
-      setReferrerAddress(null);
-      return false;
-    }
-    setRefStatus("checking");
-    const resolved = await resolveReferrer(trimmed);
-    if (resolved) {
-      setRefStatus("valid");
-      setReferrerAddress(resolved);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("trk_referrer_code", trimmed);
-      }
-      return true;
-    }
-    setRefStatus("invalid");
-    setReferrerAddress(null);
-    return false;
-  };
-
-  const startRegistration = async () => {
-    const ok = refStatus === "valid" ? true : await validateReferral();
-    if (!ok) {
-      setPendingRegister(false);
-      return;
-    }
-    setIsRegistering(true);
-    setPendingRedirect(true);
-    setPendingRegister(false);
-    await registerOnChain();
-    setIsRegistering(false);
-  };
-
-  useEffect(() => {
-    if (!pendingRegister) return;
-    if (!isConnected || !user) return;
-    void (async () => {
-      await startRegistration();
-    })();
-  }, [pendingRegister, isConnected, user]);
-
-  const handleRegister = async () => {
-    if (!isConnected) {
-      setPendingRegister(true);
-      await connect("WalletConnect");
-      return;
-    }
-    if (!user) return;
-    await startRegistration();
-  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -348,9 +247,9 @@ export default function Home() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
-              <Link href="/auth">
+              <Link href={user ? "/dashboard" : "/auth"}>
                 <Button size="lg" className="h-16 px-10 text-xl font-black bg-primary text-black rounded-2xl shadow-[0_0_30px_rgba(255,193,7,0.3)] hover:scale-105 transition-transform group">
-                  Start Earning Now
+                  {user ? "Go to Dashboard" : "Start Earning Now"}
                   <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
@@ -467,104 +366,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Join / Registration Gate */}
-      <section id="join" className="py-24 bg-black/90 border-t border-white/5">
-        <div className="container mx-auto px-4">
-          <div className="max-w-2xl mx-auto">
-            <div className="rounded-[2.5rem] border border-white/10 bg-black/60 p-10 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
-              <div className="text-center space-y-3 mb-8">
-                <div className="text-3xl md:text-4xl font-display font-black text-white">Join TRK Game</div>
-                <p className="text-white/50 text-sm">
-                  Register to unlock your referral code and rewards.
-                </p>
-                <div className="text-[10px] uppercase tracking-[0.3em] font-black text-primary">
-                  99,986 Bonus Spots Left
-                </div>
-                {user?.walletAddress && (
-                  <div className="text-[11px] font-mono text-white/40">
-                    {user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}
-                  </div>
-                )}
-              </div>
-
-              {isRegisteredOnChain ? (
-                <div className="text-center space-y-4">
-                  <div className="text-sm text-emerald-400 font-bold">
-                    Wallet verified. Your account is already registered. If you haven't already, your unique referral code is now active below.
-                    <div className="mt-4 p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col items-center gap-3">
-                      <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-black">Your Referral Code</div>
-                      <div className="text-2xl font-black text-primary tracking-widest">{user?.referralCode}</div>
-                      <Button size="sm" variant="outline" onClick={() => { if (user?.referralCode) navigator.clipboard.writeText(user.referralCode); alert("Referral code copied!"); }} className="h-8 border-white/10 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest rounded-lg">Copy Code</Button>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => router.push("/dashboard")}
-                    className="h-12 px-6 bg-primary text-black font-bold rounded-xl"
-                  >
-                    Continue to Dashboard
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.3em] font-black text-white/40">
-                      Referral Address (Required)
-                    </label>
-                    <div className="relative">
-                      <input
-                        value={refCode}
-                        onChange={(e) => {
-                          setRefCode(e.target.value);
-                          setRefStatus("idle");
-                          setReferrerAddress(null);
-                        }}
-                        onBlur={() => {
-                          if (refCode.trim()) void validateReferral();
-                        }}
-                        placeholder="Enter Referral Code (TRK...)"
-                        className="w-full h-14 rounded-2xl bg-black/40 border border-emerald-500/30 text-white px-5 pr-24 font-mono text-sm outline-none focus:border-emerald-400 transition-colors"
-                      />
-                      <span
-                        className={`absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold ${refStatus === "valid"
-                          ? "text-emerald-400"
-                          : refStatus === "invalid"
-                            ? "text-red-400"
-                            : "text-white/30"
-                          }`}
-                      >
-                        {refStatus === "checking"
-                          ? "Checking..."
-                          : refStatus === "valid"
-                            ? "Valid"
-                            : refStatus === "invalid"
-                              ? "Invalid"
-                              : ""}
-                      </span>
-                    </div>
-                    {referrerAddress && (
-                      <div className="text-xs text-emerald-400">
-                        Referrer: {referrerAddress.slice(0, 6)}...{referrerAddress.slice(-4)}
-                      </div>
-                    )}
-                  </div>
-
-                  <Button
-                    onClick={handleRegister}
-                    disabled={isRegistering || (isConnected && !user)}
-                    className="w-full h-14 rounded-2xl bg-primary text-black font-black uppercase tracking-widest"
-                  >
-                    {isRegistering
-                      ? "Check Wallet..."
-                      : isConnected
-                        ? "Register & Claim Bonus"
-                        : "Open WalletConnect"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* How it Works - The Visual Roadmap */}
       <section id="how-it-works" className="py-32 relative bg-black/80 overflow-hidden">
@@ -662,8 +463,6 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
-
-
 
       {/* Ecosystem Rewards Section */}
       <section id="ecosystem" className="py-32 bg-black/50 border-y border-white/5">

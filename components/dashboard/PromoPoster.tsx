@@ -14,11 +14,13 @@ interface PromoPosterProps {
 }
 
 export function PromoPoster({
-    title = "Become The Protocol Owner",
-    description = "Unlock governance rights, revenue sharing, and elite tier withdrawal limits.",
+    title,
+    description,
     link = "/dashboard",
     imageUrl
 }: PromoPosterProps) {
+    if (!title) return null; // Don't render if no title is provided
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}

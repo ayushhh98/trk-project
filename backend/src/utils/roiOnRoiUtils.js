@@ -38,35 +38,51 @@ const processDailyRoi = async (io) => {
             while (currentUser?.referredBy && currentLevel <= 15) {
                 const upline = await User.findById(currentUser.referredBy);
                 if (upline) {
-                    // STRICT REQUIREMENT: Upline must have all streams unlocked (Tier 2)
-                    if (!upline.activation || !upline.activation.allStreamsUnlocked) {
-                        // Skip this upline if not fully unlocked
-                        currentUser = upline;
-                        currentLevel++;
-                        continue;
-                    }
+                    // Qualification: Standard dynamic compression or referral count based
+                    // "The deeper your network grows..." implies referral-based depth
+                    const referralCount = upline.referrals?.length || 0;
 
-                    const totalCommission = poolAmount * ROI_COMMISSION_RATES[currentLevel];
+                    // Simple logic: 1 referral unlocks 1 level? Or standard logic?
+                    // Using standard logic from incomeDistributor usually:
+                    // 10 directs -> 15 levels.
+                    const unlockedLevels = referralCount >= 10 ? 15 : referralCount;
 
-                    // 20% redirection to Lucky Draw Wallet (from daily cashback ROI earnings)
-                    const luckyCredit = totalCommission * 0.20;
-                    const netRoiCredit = totalCommission - luckyCredit;
+                    if (currentLevel <= unlockedLevels) {
+                        const totalCommission = poolAmount * ROI_COMMISSION_RATES[currentLevel];
 
-                    // Update balances
-                    upline.realBalances.roiOnRoi = (upline.realBalances.roiOnRoi || 0) + netRoiCredit;
-                    upline.realBalances.luckyDrawWallet = (upline.realBalances.luckyDrawWallet || 0) + luckyCredit;
+                        // Update balances (Direct credit)
+                        // Assuming "passive income" means direct cash/reward points
+                        upline.realBalances.roiOnRoi = (upline.realBalances.roiOnRoi || 0) + totalCommission;
 
-                    await upline.save();
-                    totalDistributed += totalCommission;
+                        // Optional: Add to main cash or game balance? 
+                        // Usually "passive income" -> withdrawable (cash) or game?
+                        // "Turn your team’s cashback into your daily passive income" -> likely cash/reward
+                        upline.rewardPoints += totalCommission;
 
-                    if (io) {
-                        io.to(upline._id.toString()).emit('balance_update', {
-                            type: 'commission',
-                            commissionType: 'roi_on_roi',
-                            amount: netRoiCredit,
-                            luckyCredit,
-                            newBalance: upline.realBalances.roiOnRoi
-                        });
+                        await upline.save();
+                        totalDistributed += totalCommission;
+
+                        if (io) {
+                            io.to(upline._id.toString()).emit('balance_update', {
+                                type: 'commission',
+                                commissionType: 'roi_on_roi',
+                                amount: totalCommission,
+                                newBalance: upline.realBalances.roiOnRoi
+                            });
+                        }
+
+                        // Log Commission
+                        try {
+                            const Commission = require('../models/Commission');
+                            await Commission.create({
+                                user: upline._id,
+                                fromUser: user._id,
+                                amount: totalCommission,
+                                level: currentLevel,
+                                type: 'roi_commission',
+                                status: 'credited'
+                            });
+                        } catch (e) { console.error(e); }
                     }
                 }
                 currentUser = upline;

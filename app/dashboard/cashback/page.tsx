@@ -98,24 +98,24 @@ export default function CashbackPage() {
         if (apiStats) {
             // Allow API to override contract data for advanced logic not yet on-chain
             return {
-                isActivated: apiStats.isActivated,
-                totalLosses: apiStats.totalLosses,
-                totalRecovered: apiStats.recovery.totalRecovered,
-                pendingCashback: apiStats.cashback.pending,
-                dailyRate: apiStats.cashback.baseDailyRate,
-                referralVolume: apiStats.boostTier?.referralVolume ?? 0,
-                boostMultiplier: apiStats.boostTier.multiplier,
+                isActivated: apiStats.isActivated ?? false,
+                totalLosses: apiStats.totalLosses ?? 0,
+                totalRecovered: apiStats.recovery?.totalRecovered ?? 0,
+                pendingCashback: apiStats.cashback?.pending ?? 0,
+                dailyRate: apiStats.cashback?.baseDailyRate ?? 0,
+                referralVolume: apiStats.boostTier?.totalVolume ?? 0,
+                boostMultiplier: apiStats.boostTier?.multiplier ?? 1,
                 sustainabilityCycle: {
-                    hasReachedCap: apiStats.sustainabilityCycle.hasReachedCap,
-                    currentCap: apiStats.sustainabilityCycle.currentCap,
-                    capProgress: apiStats.sustainabilityCycle.capProgress,
-                    remainingCap: apiStats.sustainabilityCycle.remainingCap,
+                    hasReachedCap: apiStats.sustainabilityCycle?.hasReachedCap ?? false,
+                    currentCap: apiStats.sustainabilityCycle?.currentCap ?? '400%',
+                    capProgress: apiStats.sustainabilityCycle?.capProgress ?? 0,
+                    remainingCap: apiStats.sustainabilityCycle?.remainingCap ?? 0,
                     userCount: apiStats.sustainabilityCycle?.capInfo?.currentUserCount ?? 0,
-                    threshold: apiStats.sustainabilityCycle?.capInfo?.activatedUserThreshold ?? 0,
-                    requiresRedeposit: apiStats.sustainabilityCycle.requiresRedeposit
+                    threshold: apiStats.sustainabilityCycle?.capInfo?.activatedUserThreshold ?? 100000,
+                    requiresRedeposit: apiStats.sustainabilityCycle?.requiresRedeposit ?? false
                 },
-                boostTierName: apiStats.boostTier.name,
-                currentPhase: apiStats.currentPhase
+                boostTierName: apiStats.boostTier?.name ?? 'Tier 1X',
+                currentPhase: apiStats.currentPhase ?? { name: 'Phase 1' }
             };
         }
         return null;

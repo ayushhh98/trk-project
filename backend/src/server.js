@@ -22,6 +22,7 @@ const User = require('./models/User');
 const { startObserver } = require('./services/observer');
 const { startCronJobs } = require('./services/cron');
 const { logger } = require('./utils/logger');
+const system = require('./config/system');
 
 // Connect to Database
 connectDB();
@@ -340,6 +341,9 @@ const startServer = (port) => {
             logger.info(`🚀 Server running on port ${port}`);
             logger.info(`📝 Environment: ${process.env.NODE_ENV}`);
             logger.info(`🎮 Real Money Games: ${process.env.REAL_MONEY_GAMES_ENABLED === 'true' ? 'ENABLED ✅' : 'DISABLED 🔒'}`);
+
+            // Initialize system config
+            system.init(io).catch(err => logger.error('Failed to init system config:', err));
         }).on('error', (err) => {
             if (err.code === 'EADDRINUSE') {
                 logger.error(`❌ Port ${port} is already in use. Please close the other process or use "npm run clean-start".`);

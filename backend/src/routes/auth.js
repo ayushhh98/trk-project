@@ -10,6 +10,8 @@ const auth = require('../middleware/auth');
 const { sendOtpEmail, sendPasswordResetOtpEmail } = require('../utils/email');
 const { OAuth2Client } = require('google-auth-library');
 const { awardReferralSignupBonus } = require('../utils/referralBonus');
+// const { systemConfig } = require('../utils/globalConfig'); // Deprecated
+const system = require('../config/system');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -64,12 +66,82 @@ const getPracticeExpiryDate = () => new Date(Date.now() + getPracticeDurationDay
 const applyPracticeLoginState = (user) => {
     let changed = false;
 
-    if (!user.practiceExpiry || Number.isNaN(new Date(user.practiceExpiry).getTime())) {
-        user.practiceExpiry = getPracticeExpiryDate();
-        changed = true;
+    // CRITICAL FIX: Only set practiceExpiry on FIRST registration (when it's truly null/undefined)
+    // Once set, it should NEVER be reset on subsequent logins - this allows the timer to count down naturally
+    // Do NOT reset expired timers - the frontend handles the expired state gracefully
+    if (user.practiceExpiry === null || user.practiceExpiry === undefined) {
+        // First time user - set the practice period countdown
+        if (user.practiceBalance > 0) {
+            user.practiceExpiry = getPracticeExpiryDate();
+            changed = true;
+        }
     }
+    // If practiceExpiry is already set (even if expired), leave it unchanged
 
     return changed;
+};
+
+const toAdminRealtimeUser = (user) => ({
+    _id: user?._id?.toString?.() || user?._id || '',
+    email: user?.email || '',
+    walletAddress: user?.walletAddress || '',
+    role: user?.role || 'player',
+    isBanned: Boolean(user?.isBanned),
+    isFrozen: Boolean(user?.isFrozen),
+    isActive: user?.isActive !== false,
+    credits: typeof user?.practiceBalance === 'number' ? user.practiceBalance : 0,
+    rewardPoints: typeof user?.rewardPoints === 'number' ? user.rewardPoints : 0,
+    realBalances: user?.realBalances || {},
+    activation: user?.activation || { tier: 'none', totalDeposited: 0 },
+    referralCode: user?.referralCode || '',
+    createdAt: user?.createdAt || new Date()
+});
+
+const emitUserRegisteredRealtime = (req, user, source = 'unknown') => {
+    const io = req.app.get('io');
+    if (!io || !user) return;
+
+    const payload = {
+        ...toAdminRealtimeUser(user),
+        source,
+        timestamp: new Date().toISOString()
+    };
+    io.emit('user_registered', payload);
+    io.emit('admin:user_registered', payload);
+};
+
+const verifyWalletSignature = (message, signature, address) => {
+    console.log('[DEBUG AUTH] Verifying Signature:', { message, address });
+    console.log('[DEBUG AUTH] Signature snippet:', signature?.slice(0, 20) + '...');
+    try {
+        const recoveredAddress = ethers.verifyMessage(message, signature);
+        console.log('[DEBUG AUTH] Recovered Address (Ethers):', recoveredAddress?.toLowerCase());
+        if (recoveredAddress?.toLowerCase() === address) return true;
+    } catch (err) {
+        // continue to fallback
+    }
+
+    try {
+        // eth_sign fallback: sign(keccak256(messageBytes)) with no prefix
+        const messageHash = ethers.keccak256(ethers.toUtf8Bytes(message));
+        const recoveredAddress = ethers.recoverAddress(messageHash, signature);
+        if (recoveredAddress?.toLowerCase() === address) return true;
+    } catch (err) {
+        // ignore
+    }
+
+    try {
+        // Hex-Text fallback: Some wallets/providers sign the HEX string as text
+        // e.g. "0x48656c6c6f" instead of "Hello"
+        const hexMessage = ethers.hexlify(ethers.toUtf8Bytes(message));
+        const recoveredAddress = ethers.verifyMessage(hexMessage, signature);
+        console.log('[DEBUG AUTH] Recovered Address (Hex-Text):', recoveredAddress?.toLowerCase());
+        if (recoveredAddress?.toLowerCase() === address) return true;
+    } catch (err) {
+        // ignore
+    }
+
+    return false;
 };
 
 // Apply rate limiting to auth endpoints
@@ -80,34 +152,49 @@ router.use('/request-password-reset', authLimiter);
 router.use('/reset-password', authLimiter);
 router.use('/link-wallet/nonce', authLimiter);
 
-// Generate nonce for wallet signature
+// Get nonce for wallet auth - Step 1 of wallet login
 router.post('/nonce', async (req, res) => {
     try {
-        const { walletAddress, referrerCode } = req.body;
+        const { walletAddress, referralCode } = req.body;
 
-        if (!walletAddress || !ethers.isAddress(walletAddress)) {
+        if (!walletAddress) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Valid wallet address is required'
+                message: 'Wallet address is required'
             });
         }
 
         const address = walletAddress.toLowerCase();
-
         let user = await User.findOne({ walletAddress: address });
 
+        const isPlayer = !resolveRoleForIdentity({ walletAddress: address, email: null });
+
+        // NEW USER: Require referral code
         if (!user) {
-            // Handle referral if code provided
+            // Validate referral code for new users
             let referredBy = null;
-            if (referrerCode) {
-                const referrer = await User.findOne({ referralCode: referrerCode.toUpperCase() });
-                if (referrer) {
-                    referredBy = referrer._id;
+
+            if (referralCode) {
+                const normalizedCode = referralCode.trim().toUpperCase();
+                const referrer = await User.findOne({ referralCode: normalizedCode });
+
+                if (!referrer) {
+                    return res.status(400).json({
+                        status: 'error',
+                        message: 'Invalid referral code. Please check and try again.'
+                    });
                 }
+
+                referredBy = referrer._id;
+            } else if (isPlayer) {
+                // Player accounts MUST have referral code
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Referral code is required to join. Please enter a valid referral code.',
+                    requiresReferral: true
+                });
             }
 
-            // Create new user
-            const role = resolveRoleForIdentity({ walletAddress: address });
             // Check if 100,000 practice users limit reached
             const practiceUserCount = await User.countDocuments({ practiceBalance: { $gt: 0 } });
             const bonusAmount = practiceUserCount < 100000 ? getPracticeBonus() : 0;
@@ -116,11 +203,12 @@ router.post('/nonce', async (req, res) => {
                 walletAddress: address,
                 nonce: Math.floor(Math.random() * 1000000).toString(),
                 referredBy: referredBy,
-                role: role || 'player',
+                role: isPlayer ? 'player' : resolveRoleForIdentity({ walletAddress: address, email: null }),
                 practiceBalance: bonusAmount,
                 practiceExpiry: bonusAmount > 0 ? getPracticeExpiryDate() : null
             });
             await user.save();
+            emitUserRegisteredRealtime(req, user, 'wallet');
 
             if (referredBy) {
                 const io = req.app.get('io');
@@ -130,14 +218,47 @@ router.post('/nonce', async (req, res) => {
                     io
                 });
 
-                // Trigger Practice Referral Rewards (if bonus was given)
+                // Award Practice Referral Bonuses (15-100 levels)
                 if (bonusAmount > 0) {
-                    const { distributePracticeRewards } = require('../utils/incomeDistributor');
-                    await distributePracticeRewards(user._id, referredBy);
+                    const { distributePracticeReferralBonuses } = require('../utils/practiceBonusDistributor');
+                    await distributePracticeReferralBonuses(user._id, io);
                 }
             }
         } else {
-            // Generate new nonce
+            // EXISTING USER:
+            // 1. Check if they are a player without a referrer, and if a code was provided now
+            if (!user.referredBy && user.role === 'player' && referralCode) {
+                console.log(`[AUTH-DEBUG] User ${user._id} attempting late referral with code: ${referralCode}`);
+                const normalizedCode = referralCode.trim().toUpperCase();
+                const referrer = await User.findOne({ referralCode: normalizedCode });
+
+                if (referrer) {
+                    console.log(`[AUTH-DEBUG] Linking ${user._id} to referrer ${referrer._id}`);
+                    user.referredBy = referrer._id;
+
+                    // Award bonus since they are technically "new" to the referral system
+                    const io = req.app.get('io');
+                    await awardReferralSignupBonus({
+                        referrerId: referrer._id,
+                        referredUserId: user._id,
+                        io
+                    });
+
+                    // Award Practice Referral Bonuses (15-100 levels) if applicable
+                    if (user.practiceBalance > 0) {
+                        const { distributePracticeReferralBonuses } = require('../utils/practiceBonusDistributor');
+                        await distributePracticeReferralBonuses(user._id, io);
+                    }
+                } else {
+                    console.log(`[AUTH-DEBUG] Referrer not found for ${normalizedCode}`);
+                }
+            } else {
+                if (referralCode) {
+                    console.log(`[AUTH-DEBUG] Skipping referral apply. Role: ${user.role}, HasReferrer: ${!!user.referredBy}`);
+                }
+            }
+
+            // 2. Update nonce logic
             const role = resolveRoleForIdentity({ walletAddress: address, email: user.email });
             if (role && role !== user.role) {
                 user.role = role;
@@ -146,11 +267,12 @@ router.post('/nonce', async (req, res) => {
             await user.save();
         }
 
-        res.status(200).json({
+        res.json({
             status: 'success',
             data: {
                 nonce: user.nonce,
-                message: `Sign this message to authenticate with TRK: ${user.nonce}`
+                message: `Sign this message to authenticate with TRK: ${user.nonce}`,
+                isNewUser: !user.referredBy && user.practiceBalance > 0
             }
         });
 
@@ -187,9 +309,10 @@ router.post('/verify', async (req, res) => {
 
         // Verify signature
         const message = `Sign this message to authenticate with TRK: ${user.nonce}`;
-        const recoveredAddress = ethers.verifyMessage(message, signature);
+        console.log('[DEBUG AUTH] /verify params:', { walletAddress, address, nonce: user.nonce });
+        const isValidSignature = verifyWalletSignature(message, signature, address);
 
-        if (recoveredAddress.toLowerCase() !== address) {
+        if (!isValidSignature) {
             return res.status(401).json({
                 status: 'error',
                 message: 'Invalid signature'
@@ -424,6 +547,10 @@ router.post('/logout-all', auth, async (req, res) => {
 // Email Registration
 router.post('/register', async (req, res) => {
     try {
+        if (system.get().emergencyFlags.pauseRegistrations) {
+            return res.status(503).json({ status: 'error', message: 'Registrations are currently paused due to system maintenance.' });
+        }
+
         const { email, password, referrerCode } = req.body;
 
         if (!email || !password) {
@@ -446,6 +573,16 @@ router.post('/register', async (req, res) => {
         }
 
         const role = resolveRoleForIdentity({ email });
+        const isPlayer = !role || role === 'player';
+
+        // Mandatory Referral Enforcement
+        if (isPlayer && !referredBy) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'A valid referral code is required to register.'
+            });
+        }
+
         // Check if 100,000 practice users limit reached
         const practiceUserCount = await User.countDocuments({ practiceBalance: { $gt: 0 } });
         const bonusAmount = practiceUserCount < 100000 ? getPracticeBonus() : 0;
@@ -461,10 +598,17 @@ router.post('/register', async (req, res) => {
             practiceExpiry: bonusAmount > 0 ? getPracticeExpiryDate() : null
         });
 
-        const generateReferralCode = (mail) => {
-            const prefix = (mail || 'USER').split('@')[0].slice(0, 6).toUpperCase();
-            const rand = Math.floor(1000 + Math.random() * 9000); // 4 digits
-            return `${prefix}${rand}`;
+        const generateReferralCode = async (userInstance) => {
+            const prefix = "TRK";
+            const Model = userInstance.constructor;
+
+            for (let attempt = 0; attempt < 50; attempt++) {
+                const randomDigits = Math.floor(10000 + Math.random() * 90000).toString();
+                const code = `${prefix}${randomDigits}`;
+                const exists = await Model.exists({ referralCode: code });
+                if (!exists) return code;
+            }
+            return null;
         };
 
         // Ensure referralCode uniqueness (retry on collision)
@@ -472,7 +616,9 @@ router.post('/register', async (req, res) => {
         let attempts = 0;
         while (!saved && attempts < 3) {
             try {
-                if (!user.referralCode) user.referralCode = generateReferralCode(email);
+                if (!user.referralCode) {
+                    user.referralCode = await generateReferralCode(user);
+                }
                 await user.save();
                 saved = true;
 
@@ -483,28 +629,30 @@ router.post('/register', async (req, res) => {
                         $inc: { 'teamStats.totalMembers': 1 }
                     });
 
-                    // Trigger Practice Referral Rewards (if bonus was given)
+                    // Award Practice Referral Bonuses (15-100 levels)
                     if (bonusAmount > 0) {
-                        const { distributePracticeRewards } = require('../utils/incomeDistributor');
-                        await distributePracticeRewards(user._id, referredBy);
+                        const { distributePracticeReferralBonuses } = require('../utils/practiceBonusDistributor');
+                        const io = req.app.get('io');
+                        await distributePracticeReferralBonuses(user._id, io);
                     }
                 }
             } catch (err) {
                 if (err?.code === 11000 && err?.keyPattern?.referralCode) {
-                    user.referralCode = generateReferralCode(email);
+                    user.referralCode = await generateReferralCode(user);
                     attempts += 1;
                     continue;
                 }
                 if (err?.code === 11000 && err?.keyPattern?.email) {
                     return res.status(400).json({ status: 'error', message: 'Email already registered' });
-                }
-                throw err;
+                } throw err;
             }
         }
 
         if (!saved) {
             return res.status(500).json({ status: 'error', message: 'Registration failed. Please try again.' });
         }
+
+        emitUserRegisteredRealtime(req, user, 'email');
 
         if (referredBy) {
             const io = req.app.get('io');
@@ -514,9 +662,10 @@ router.post('/register', async (req, res) => {
                 io
             });
 
+            // Award Practice Referral Bonuses (15-100 levels)
             if (bonusAmount > 0) {
-                const { distributePracticeRewards } = require('../utils/incomeDistributor');
-                await distributePracticeRewards(user._id, referredBy);
+                const { distributePracticeReferralBonuses } = require('../utils/practiceBonusDistributor');
+                await distributePracticeReferralBonuses(user._id, io);
             }
         }
 
@@ -651,6 +800,12 @@ router.post('/reset-password', async (req, res) => {
 // Email Login
 router.post('/login-email', async (req, res) => {
     try {
+        if (systemConfig.emergencyFlags.maintenanceMode) {
+            const user = await User.findOne({ email: req.body.email.toLowerCase() });
+            if (user && user.role !== 'admin' && user.role !== 'superadmin') {
+                return res.status(503).json({ status: 'error', message: 'System is currently in maintenance mode.' });
+            }
+        }
         const { email, password } = req.body;
 
         const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
@@ -749,8 +904,14 @@ router.post('/google', async (req, res) => {
                 { email: email.toLowerCase() }
             ]
         });
+        let isNewGoogleUser = false;
 
         if (!user) {
+            // Check if registrations are paused
+            if (systemConfig.emergencyFlags.pauseRegistrations) {
+                return res.status(503).json({ status: 'error', message: 'Registrations are currently paused due to system maintenance.' });
+            }
+
             // New user from Google
             const role = resolveRoleForIdentity({ email });
 
@@ -769,6 +930,7 @@ router.post('/google', async (req, res) => {
                 practiceExpiry: bonusAmount > 0 ? getPracticeExpiryDate() : null
             });
             await user.save();
+            isNewGoogleUser = true;
 
             // Link to referrer if code was present during OAuth flow (not yet implemented in current OAuth logic but adding hook)
             // Note: In current Google flow, referrerCode would need to be passed in session/state
@@ -794,6 +956,9 @@ router.post('/google', async (req, res) => {
         user.lastLoginAt = new Date();
         await applyPracticeLoginState(user);
         await user.save();
+        if (isNewGoogleUser) {
+            emitUserRegisteredRealtime(req, user, 'google');
+        }
 
         // Generate tokens (Reuse existing logic)
         const accessToken = jwt.sign(
@@ -900,9 +1065,9 @@ router.post('/link-wallet', auth, async (req, res) => {
             });
         }
         const message = `Link this wallet to my TRK account: ${user.nonce}`;
-        const recoveredAddress = ethers.verifyMessage(message, signature);
+        const isValidSignature = verifyWalletSignature(message, signature, address);
 
-        if (recoveredAddress.toLowerCase() !== address) {
+        if (!isValidSignature) {
             return res.status(401).json({ status: 'error', message: 'Invalid wallet signature' });
         }
 

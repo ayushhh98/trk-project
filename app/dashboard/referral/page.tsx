@@ -10,13 +10,15 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useReadContract } from "wagmi";
 import { referralAPI } from "@/lib/api";
 import { TRKGameABI } from "@/config/abis";
 import { GAME_CONTRACT_ADDRESS } from "@/config/contracts";
 import { formatUnits, isAddress } from "viem";
 import { cn } from "@/lib/utils";
+import { socket } from "@/components/providers/Web3Provider";
+import { toast } from "sonner";
 
 // Practice Referral Rewards Structure (based on 100 USDT base)
 const practiceRewardStructure = [
@@ -44,11 +46,12 @@ const powerOf10Matrix = [
 // Mocks removed as data is now fetched from backend
 
 export default function ReferralPage() {
-    const { address, isRegisteredOnChain, registerOnChain, user } = useWallet();
+    const { address, isRegisteredOnChain, registerOnChain, user, refreshUser } = useWallet();
     const [copied, setCopied] = useState(false);
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [showPowerOf10, setShowPowerOf10] = useState(false);
     const [stats, setStats] = useState<any>(null);
+    const [isClaiming, setIsClaiming] = useState(false);
 
     // Fetch live user data from contract
     const isValidAddress = !!address && isAddress(address);
@@ -62,29 +65,59 @@ export default function ReferralPage() {
         }
     }) as { data: any };
 
+    const fetchStats = useCallback(async () => {
+        try {
+            const res = await referralAPI.getStats();
+            if (res.status === 'success') {
+                setStats(res.data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch referral stats", err);
+        }
+    }, []);
+
     useEffect(() => {
         if (!address) return;
-        let isMounted = true;
+        fetchStats();
+        const interval = setInterval(fetchStats, 8000);
+        return () => clearInterval(interval);
+    }, [address, user?.referralCode, fetchStats]);
 
-        const fetchStats = async () => {
-            try {
-                const res = await referralAPI.getStats();
-                if (res.status === 'success' && isMounted) {
-                    setStats(res.data);
-                }
-            } catch (err) {
-                console.error("Failed to fetch referral stats", err);
+    useEffect(() => {
+        const currentSocket = socket;
+        if (!address || !currentSocket) return;
+
+        let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+        const scheduleRefresh = () => {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => {
+                void fetchStats();
+                void refreshUser();
+            }, 350);
+        };
+
+        const handleBalanceUpdate = (payload: any) => {
+            const type = payload?.type;
+            if (!type) return;
+            if (['referral_bonus', 'commission', 'referral_claim', 'deposit', 'withdrawal'].includes(type)) {
+                scheduleRefresh();
             }
         };
 
-        fetchStats();
-        const interval = setInterval(fetchStats, 15000);
+        const handleReferralActivity = () => scheduleRefresh();
+        const handleReferralCommission = () => scheduleRefresh();
+
+        currentSocket.on('balance_update', handleBalanceUpdate);
+        currentSocket.on('referral_activity', handleReferralActivity);
+        currentSocket.on('referral_commission_created', handleReferralCommission);
 
         return () => {
-            isMounted = false;
-            clearInterval(interval);
+            if (refreshTimer) clearTimeout(refreshTimer);
+            currentSocket.off('balance_update', handleBalanceUpdate);
+            currentSocket.off('referral_activity', handleReferralActivity);
+            currentSocket.off('referral_commission_created', handleReferralCommission);
         };
-    }, [address, user?.referralCode]);
+    }, [address, fetchStats, refreshUser]);
 
     const defaultStats = useMemo(() => {
         const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -96,6 +129,7 @@ export default function ReferralPage() {
                 members: 0,
                 active: 0,
                 totalEarned: 0,
+                claimable: 0,
                 tier1Percent: 0,
                 tier2Percent: 0
             },
@@ -131,7 +165,10 @@ export default function ReferralPage() {
         ? `https://trk.game/?ref=${user.referralCode}`
         : address ? `https://trk.game/?ref=${address.slice(2, 8).toUpperCase()}` : "Connect wallet to get your link";
 
-    const totalReward = effectiveStats?.totals?.totalEarned || user?.rewardPoints || 0;
+    const totalReward = Number(effectiveStats?.totals?.totalEarned ?? 0);
+    const claimableReward = Number(effectiveStats?.totals?.claimable ?? 0);
+    const directReferralCount = Number(effectiveStats?.directReferrals || 0);
+    const practiceLevel1Reward = Math.min(directReferralCount, 20) * 10;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(referralLink);
@@ -168,7 +205,7 @@ export default function ReferralPage() {
                     <p className="text-amber-500 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-3">
                         <AlertCircle className="h-4 w-4" />
                         Identity not secured on blockchain.
-                        <button onClick={registerOnChain} className="underline hover:text-white transition-colors ml-2">Secure Now</button>
+                        <button onClick={() => registerOnChain()} className="underline hover:text-white transition-colors ml-2">Secure Now</button>
                     </p>
                 </div>
             )}
@@ -257,18 +294,78 @@ export default function ReferralPage() {
                     </motion.div>
                 </div>
 
+                {/* Referral Rules */}
+                <Card className="border-emerald-500/20 bg-emerald-500/5 backdrop-blur-3xl rounded-[2.5rem] overflow-hidden">
+                    <CardContent className="p-8 md:p-10 space-y-4">
+                        <div className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.3em]">TRK Referral Rules</div>
+                        <div className="grid md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <div className="text-sm font-black text-white uppercase tracking-widest">Practice Side</div>
+                                <div className="text-xs text-white/70 leading-relaxed">
+                                    New user gets <span className="text-emerald-400 font-black">100 USDT Practice Balance</span>.
+                                    Direct referral gives you <span className="text-emerald-400 font-black">10 USDT Practice Reward (Level 1)</span>.
+                                    Practice rewards are non-withdrawable.
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="text-sm font-black text-white uppercase tracking-widest">Real Cash Side</div>
+                                <div className="text-xs text-white/70 leading-relaxed space-y-2">
+                                    <div>To receive real money:</div>
+                                    <div className="space-y-1">
+                                        <div>✔ You deposit at least <span className="text-emerald-400 font-black">10 USDT</span></div>
+                                        <div>✔ Your friend deposits</div>
+                                        <div>✔ Your friend activates account (Tier 1 or Tier 2)</div>
+                                    </div>
+                                    <div className="pt-1">
+                                        Referral rates:
+                                        <span className="text-emerald-400 font-black"> L1 5% • L2 2% • L3-5 1% • L6-15 0.5%</span>
+                                    </div>
+                                    <div>Income goes to your real income wallet (not practice).</div>
+                                </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {/* Dashboard Stats */}
                 <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {[
-                        { label: 'Total Earnings', value: `$${totalReward.toFixed(2)}`, sub: 'PRACTICE BONUS', icon: Gift, color: 'emerald' },
+                        { label: 'Real Earnings', value: `$${totalReward.toFixed(2)}`, sub: 'REAL REFERRAL COMMISSIONS', icon: Gift, color: 'emerald', action: true },
                         { label: 'Team Size', value: effectiveStats?.totals?.members || '0', sub: 'LAST 10 LEVELS', icon: Users, color: 'blue' },
                         { label: 'Active Today', value: effectiveStats?.totals?.active || '0', sub: 'ENGAGED MEMBERS', icon: Zap, color: 'amber' },
-                        { label: 'Directs', value: `${effectiveStats?.directReferrals || 0}/${effectiveStats?.maxDirectReferrals || 20}`, sub: 'BONUS CAPACITY', icon: Target, color: 'purple' }
+                        { label: 'Practice L1', value: `${practiceLevel1Reward.toFixed(2)}`, sub: `${effectiveStats?.directReferrals || 0}/${effectiveStats?.maxDirectReferrals || 20} DIRECTS (NON-WITHDRAWABLE)`, icon: Target, color: 'purple' }
                     ].map((stat, i) => (
-                        <Card key={i} className="border-white/5 bg-white/[0.02] backdrop-blur-3xl rounded-[2.5rem] overflow-hidden group hover:border-emerald-500/20 transition-all duration-500">
+                        <Card key={i} className="border-white/5 bg-white/[0.02] backdrop-blur-3xl rounded-[2.5rem] overflow-hidden group hover:border-emerald-500/20 transition-all duration-500 relative">
                             <CardContent className="p-8 space-y-4">
-                                <div className="h-14 w-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/20 group-hover:bg-emerald-500/20 group-hover:text-emerald-500 transition-all duration-500 group-hover:rotate-6">
-                                    <stat.icon className="h-6 w-6" />
+                                <div className="flex justify-between items-start">
+                                    <div className="h-14 w-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/20 group-hover:bg-emerald-500/20 group-hover:text-emerald-500 transition-all duration-500 group-hover:rotate-6">
+                                        <stat.icon className="h-6 w-6" />
+                                    </div>
+                                    {stat.action && claimableReward > 0 && (
+                                        <Button
+                                            onClick={async () => {
+                                                if (isClaiming) return;
+                                                try {
+                                                    setIsClaiming(true);
+                                                    const res = await referralAPI.claimEarnings();
+                                                    if (res.status === 'success') {
+                                                        const claimed = Number(res?.data?.claimedAmount || 0);
+                                                        toast.success(`Claimed $${claimed.toFixed(2)} to Main Wallet`);
+                                                        await Promise.all([fetchStats(), refreshUser()]);
+                                                    }
+                                                } catch (e: any) {
+                                                    console.error(e);
+                                                    toast.error(e?.message || "Failed to extract referral earnings");
+                                                } finally {
+                                                    setIsClaiming(false);
+                                                }
+                                            }}
+                                            disabled={isClaiming}
+                                            className="h-8 px-4 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-black border border-emerald-500/20 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
+                                        >
+                                            {isClaiming ? "EXTRACTING..." : "EXTRACT"}
+                                        </Button>
+                                    )}
                                 </div>
                                 <div>
                                     <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em] mb-1">{stat.label}</div>
@@ -515,9 +612,14 @@ export default function ReferralPage() {
                                                 <div className="text-xs font-bold text-emerald-400">{level.members > 0 ? Math.round((level.active / level.members) * 100) : 0}%</div>
                                             </div>
                                         </div>
-                                        <div className="text-right">
+                                        <div className="text-right flex flex-col items-end justify-center">
                                             <div className="text-[9px] font-black text-white/20 uppercase tracking-widest mb-1">Rewards Credited</div>
-                                            <div className="text-xl font-black text-emerald-400 italic">${(level.totalEarned || 0).toFixed(2)}</div>
+                                            <div className="text-lg font-black text-white/60 italic">Total: ${(level.totalEarned || 0).toFixed(2)}</div>
+                                            {(level.realEarned > 0) && (
+                                                <div className="text-sm font-black text-emerald-400 italic animate-pulse">
+                                                    Real: ${(level.realEarned).toFixed(2)}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -555,6 +657,14 @@ export default function ReferralPage() {
                                                                 <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
                                                                     Deposited: ${totalDeposited.toFixed(2)}
                                                                 </div>
+                                                                <div className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
+                                                                    Total Earned: ${(member.commissionEarned || 0).toFixed(2)}
+                                                                </div>
+                                                                {(member.realCommissionEarned > 0) && (
+                                                                    <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest animate-pulse">
+                                                                        Real Cash: ${(member.realCommissionEarned).toFixed(2)}
+                                                                    </div>
+                                                                )}
                                                                 <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mt-1">
                                                                     {member.activation ? `Tier: ${member.activation.tier.toUpperCase()}` : 'No Membership'}
                                                                 </div>

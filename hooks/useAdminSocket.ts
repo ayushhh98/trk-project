@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import io, { Socket } from 'socket.io-client';
-import { getToken } from '@/lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { useSocket } from '@/components/providers/Web3Provider';
 
 type AdminEventHandlers = {
     onStatsUpdate?: (data: any) => void;
@@ -9,130 +8,55 @@ type AdminEventHandlers = {
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export function useAdminSocket(handlers: AdminEventHandlers = {}) {
+    const socket = useSocket();
     const [isConnected, setIsConnected] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
-    const socketRef = useRef<Socket | null>(null);
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const reconnectAttempts = useRef(0);
-    const MAX_RECONNECT_ATTEMPTS = 5;
-    const connectRef = useRef<() => void>(() => {});
+    const handlersRef = useRef(handlers);
 
-    const resolveApiBaseUrl = () => {
-        const envUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, '') || '';
-        if (typeof window === 'undefined') {
-            return envUrl || 'http://localhost:5000';
-        }
+    useEffect(() => {
+        handlersRef.current = handlers;
+    }, [handlers]);
 
-        const host = window.location.hostname;
-        const protocol = window.location.protocol;
-        const isLocalEnv = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(envUrl);
-        const isLocalHost = host === 'localhost' || host === '127.0.0.1';
-
-        if (!envUrl) {
-            return `${protocol}//${host}:5000`;
-        }
-
-        if (isLocalEnv && !isLocalHost) {
-            return `${protocol}//${host}:5000`;
-        }
-
-        return envUrl;
-    };
-
-    const handleReconnect = useCallback(() => {
-        if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) {
-            console.warn('⚠️ Max reconnection attempts reached');
+    useEffect(() => {
+        if (!socket) {
+            setIsConnected(false);
+            setConnectionStatus('disconnected');
             return;
         }
 
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-        reconnectAttempts.current++;
-
-        reconnectTimeoutRef.current = setTimeout(() => {
-            if (!socketRef.current?.connected) {
-                connectRef.current();
-            }
-        }, delay);
-    }, []);
-
-    const connect = useCallback(() => {
-        if (socketRef.current?.connected) return;
-
-        setConnectionStatus('connecting');
-
-        const apiUrl = resolveApiBaseUrl();
-        const token = getToken();
-
-        socketRef.current = io(apiUrl, {
-            auth: { token },
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
-            timeout: 10000
-        });
-
-        const socket = socketRef.current;
-
-        // Connection event handlers
-        socket.on('connect', () => {
-            console.log('🛡️ Admin WebSocket connected');
+        const handleConnect = () => {
             setIsConnected(true);
             setConnectionStatus('connected');
-            reconnectAttempts.current = 0;
+        };
 
-            // Join admin room
-            socket.emit('admin:join');
-        });
-
-        socket.on('disconnect', (reason) => {
-            console.log('❌ Admin WebSocket disconnected:', reason);
+        const handleDisconnect = () => {
             setIsConnected(false);
             setConnectionStatus('disconnected');
+        };
 
-            if (reason === 'io server disconnect') {
-                handleReconnect();
-            }
-        });
+        setIsConnected(!!socket.connected);
+        setConnectionStatus(socket.connected ? 'connected' : 'connecting');
 
-        socket.on('connect_error', (error) => {
-            console.error('🔴 Admin WebSocket connection error:', error.message, `(${apiUrl})`);
-            setConnectionStatus('disconnected');
-            handleReconnect();
-        });
+        socket.on('connect', handleConnect);
+        socket.on('disconnect', handleDisconnect);
 
-        // Admin event listeners
-        socket.on('admin:stats_update', (data) => {
-            handlers.onStatsUpdate?.(data);
-        });
+        const handleStatsUpdate = (data: any) => {
+            handlersRef.current.onStatsUpdate?.(data);
+        };
 
-    }, [handlers, handleReconnect]);
+        socket.on('admin:stats_update', handleStatsUpdate);
 
-
-    const disconnect = useCallback(() => {
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-        }
-        if (socketRef.current) {
-            socketRef.current.removeAllListeners();
-            socketRef.current.disconnect();
-            socketRef.current = null;
-        }
-        setIsConnected(false);
-        setConnectionStatus('disconnected');
-    }, []);
-
-    useEffect(() => {
-        connectRef.current = connect;
-        connect();
-        return () => disconnect();
-    }, [connect, disconnect]);
+        return () => {
+            socket.off('connect', handleConnect);
+            socket.off('disconnect', handleDisconnect);
+            socket.off('admin:stats_update', handleStatsUpdate);
+        };
+    }, [socket]);
 
     return {
         isConnected,
         connectionStatus,
-        reconnect: connect,
-        disconnect
+        reconnect: () => socket?.connect(),
+        disconnect: () => socket?.disconnect()
     };
 }

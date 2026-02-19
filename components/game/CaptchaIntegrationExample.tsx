@@ -1,6 +1,7 @@
 // Example: How to integrate CaptchaChallenge into your game betting flow
 
 import { useState } from 'react';
+import { apiRequest } from '@/lib/api';
 import CaptchaChallenge from '@/components/game/CaptchaChallenge';
 
 export default function GameExample() {
@@ -13,40 +14,25 @@ export default function GameExample() {
 
     async function placeBet(betData: any) {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/game/bet/commit`, {
+            const result = await apiRequest('/game/bet/commit', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({ betData })
             });
-
-            // Handle CAPTCHA requirement
-            if (response.status === 403) {
-                const error = await response.json();
-
-                if (error.code === 'CAPTCHA_REQUIRED') {
-                    // Show CAPTCHA challenge
-                    setCaptchaData({
-                        riskScore: error.riskScore,
-                        reasons: error.reasons,
-                        pendingBet: betData
-                    });
-                    setShowCaptcha(true);
-                    return;
-                }
-
-                // Handle other errors
-                throw new Error(error.message);
-            }
-
-            const result = await response.json();
             console.log('Bet placed:', result);
 
             // Continue with reveal step...
 
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.status === 403 && error?.data?.code === 'CAPTCHA_REQUIRED') {
+                // Show CAPTCHA challenge
+                setCaptchaData({
+                    riskScore: error.data.riskScore,
+                    reasons: error.data.reasons,
+                    pendingBet: betData
+                });
+                setShowCaptcha(true);
+                return;
+            }
             console.error('Bet failed:', error);
         }
     }
@@ -56,11 +42,9 @@ export default function GameExample() {
 
         try {
             // Retry bet with CAPTCHA token
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/game/bet/commit`, {
+            const result = await apiRequest('/game/bet/commit', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    'Content-Type': 'application/json',
                     'X-Captcha-Token': token
                 },
                 body: JSON.stringify({
@@ -69,21 +53,19 @@ export default function GameExample() {
                 })
             });
 
-            if (response.ok) {
-                const result = await response.json();
-                console.log('Bet placed after CAPTCHA:', result);
+            console.log('Bet placed after CAPTCHA:', result);
 
-                // Clear CAPTCHA state
-                setShowCaptcha(false);
-                setCaptchaData({});
+            // Clear CAPTCHA state
+            setShowCaptcha(false);
+            setCaptchaData({});
 
-                // Continue with game flow...
-            } else {
-                const error = await response.json();
-                console.error('CAPTCHA verification failed:', error);
-                alert('Verification failed. Please try again.');
+            // Continue with game flow...
+        } catch (error: any) {
+            if (error?.status === 403 && error?.data?.code) {
+                console.error('CAPTCHA verification failed:', error.data);
+                alert(error.data.message || 'Verification failed. Please try again.');
+                return;
             }
-        } catch (error) {
             console.error('Error:', error);
         }
     }

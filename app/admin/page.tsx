@@ -17,6 +17,11 @@ import { JackpotControl } from "@/components/admin/JackpotControl";
 import { BSCScanTransactions } from "@/components/admin/BSCScanTransactions";
 import { AdminIdentityPoster } from "@/components/admin/AdminIdentityPoster";
 import { Financials } from "@/components/admin/Financials";
+import { TransactionMonitor } from "@/components/admin/TransactionMonitor";
+import { EmergencyControls } from "@/components/admin/EmergencyControls";
+import { ClubMonitor } from "@/components/admin/ClubMonitor";
+import { PracticeControl } from "@/components/admin/PracticeControl";
+import { LegalCompliance } from "@/components/admin/LegalCompliance";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
     ShieldCheck,
@@ -73,16 +78,16 @@ export default function AdminPage() {
             <div className="lg:pl-[248px] min-h-screen flex flex-col transition-all duration-300">
                 <main className="flex-1 w-full px-6 md:px-10 py-10 space-y-10">
 
-                    <AdminIdentityPoster />
 
                     {/* Header section with stats (only visible on Overview for cleaner UI) */}
                     {activeTab === "overview" && <AdminStats />}
 
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+                        {/* ── OVERVIEW ── */}
                         <TabsContent value="overview" className="space-y-8 mt-0 outline-none">
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                 <div className="lg:col-span-2">
-                                    <AdminCharts />
+                                    <AdminIdentityPoster />
                                 </div>
                                 <div>
                                     <AdminLiveFeed />
@@ -97,20 +102,27 @@ export default function AdminPage() {
                             </div>
                         </TabsContent>
 
+                        {/* ── USER MANAGEMENT ── */}
                         <TabsContent value="users" className="mt-0 outline-none">
                             <UserTable />
                         </TabsContent>
 
-
-
+                        {/* ── WALLET CONTROL ── */}
                         <TabsContent value="wallet" className="space-y-6 mt-0 outline-none">
                             <BDWallets />
                         </TabsContent>
 
+                        {/* ── TRANSACTIONS (NEW) ── */}
+                        <TabsContent value="transactions" className="mt-0 outline-none">
+                            <TransactionMonitor />
+                        </TabsContent>
+
+                        {/* ── FINANCIALS ── */}
                         <TabsContent value="finance" className="space-y-8 mt-0 outline-none">
                             <Financials />
                         </TabsContent>
 
+                        {/* ── JACKPOT ENGINE ── */}
                         <TabsContent value="jackpot" className="space-y-8 mt-0 outline-none">
                             <JackpotControl />
                             <div className="space-y-6">
@@ -121,6 +133,35 @@ export default function AdminPage() {
                             </div>
                         </TabsContent>
 
+                        {/* ── CLUB MONITOR (NEW) ── */}
+                        <TabsContent value="club" className="mt-0 outline-none">
+                            <ClubMonitor />
+                        </TabsContent>
+
+                        {/* ── PRACTICE CONTROL (NEW) ── */}
+                        <TabsContent value="practice" className="mt-0 outline-none">
+                            <PracticeControl />
+                        </TabsContent>
+
+
+
+                        {/* ── ANALYTICS ── */}
+                        <TabsContent value="analytics" className="space-y-8 mt-0 outline-none">
+                            <AdminCharts />
+                        </TabsContent>
+
+                        {/* ── EMERGENCY CONTROLS (NEW) ── */}
+                        <TabsContent value="emergency" className="mt-0 outline-none">
+                            <EmergencyControls />
+                        </TabsContent>
+
+                        {/* ── SUB-ADMIN MANAGEMENT (NEW) ── */}
+
+                        {/* ── LEGAL & COMPLIANCE (NEW) ── */}
+                        <TabsContent value="legal" className="mt-0 outline-none">
+                            <LegalCompliance />
+                        </TabsContent>
+
                     </Tabs>
                 </main>
                 <Footer />
@@ -128,3 +169,4 @@ export default function AdminPage() {
         </div>
     );
 }
+

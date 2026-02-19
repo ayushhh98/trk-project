@@ -83,7 +83,7 @@ export function Navbar() {
                         <>
                             <Link href="/auth">
                                 <Button variant="ghost" className="text-white hover:text-primary font-bold">
-                                    Login
+                                    Register
                                 </Button>
                             </Link>
                             <Link href="/auth">
@@ -288,7 +288,7 @@ export function Navbar() {
                                     <>
                                         <Link href="/auth" onClick={() => setIsMobileMenuOpen(false)}>
                                             <Button variant="outline" className="w-full h-12 border-primary/20 text-primary font-bold">
-                                                Login
+                                                Register
                                             </Button>
                                         </Link>
                                         <Link href="/auth" onClick={() => setIsMobileMenuOpen(false)}>
