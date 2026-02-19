@@ -17,7 +17,7 @@ import { TRKGameABI } from "@/config/abis";
 import { GAME_CONTRACT_ADDRESS } from "@/config/contracts";
 import { formatUnits, isAddress } from "viem";
 import { cn } from "@/lib/utils";
-import { socket } from "@/components/providers/Web3Provider";
+import { useSocket } from "@/components/providers/Web3Provider";
 import { toast } from "sonner";
 
 // Practice Referral Rewards Structure (based on 100 USDT base)
@@ -47,6 +47,7 @@ const powerOf10Matrix = [
 
 export default function ReferralPage() {
     const { address, isRegisteredOnChain, registerOnChain, user, refreshUser } = useWallet();
+    const socket = useSocket();
     const [copied, setCopied] = useState(false);
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [showPowerOf10, setShowPowerOf10] = useState(false);
@@ -84,8 +85,7 @@ export default function ReferralPage() {
     }, [address, user?.referralCode, fetchStats]);
 
     useEffect(() => {
-        const currentSocket = socket;
-        if (!address || !currentSocket) return;
+        if (!address || !socket) return;
 
         let refreshTimer: ReturnType<typeof setTimeout> | null = null;
         const scheduleRefresh = () => {
@@ -107,17 +107,17 @@ export default function ReferralPage() {
         const handleReferralActivity = () => scheduleRefresh();
         const handleReferralCommission = () => scheduleRefresh();
 
-        currentSocket.on('balance_update', handleBalanceUpdate);
-        currentSocket.on('referral_activity', handleReferralActivity);
-        currentSocket.on('referral_commission_created', handleReferralCommission);
+        socket.on('balance_update', handleBalanceUpdate);
+        socket.on('referral_activity', handleReferralActivity);
+        socket.on('referral_commission_created', handleReferralCommission);
 
         return () => {
             if (refreshTimer) clearTimeout(refreshTimer);
-            currentSocket.off('balance_update', handleBalanceUpdate);
-            currentSocket.off('referral_activity', handleReferralActivity);
-            currentSocket.off('referral_commission_created', handleReferralCommission);
+            socket.off('balance_update', handleBalanceUpdate);
+            socket.off('referral_activity', handleReferralActivity);
+            socket.off('referral_commission_created', handleReferralCommission);
         };
-    }, [address, fetchStats, refreshUser]);
+    }, [address, fetchStats, refreshUser, socket]);
 
     const defaultStats = useMemo(() => {
         const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

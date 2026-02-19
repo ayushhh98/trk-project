@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Gamepad2, RefreshCw, AlertCircle, TrendingUp, Users, Clock, Zap, ArrowRight, Activity, ShieldCheck } from "lucide-react";
 import { useSocket } from "@/components/providers/Web3Provider";
 import { cn } from "@/lib/utils";
+import { getApiUrl } from "@/lib/api";
 
 interface PracticeStats {
     totalPracticeUsers: number;
@@ -46,7 +47,7 @@ export function PracticeControl() {
         setIsLoading(true);
         try {
             const token = localStorage.getItem("trk_token");
-            const res = await fetch("/api/admin/practice/stats", { headers: { Authorization: `Bearer ${token}` } });
+            const res = await fetch(`${getApiUrl()}/admin/practice/stats`, { headers: { Authorization: `Bearer ${token}` } });
             const data = await res.json();
             if (data.status === "success") {
                 setStats(data.data);
@@ -80,9 +81,22 @@ export function PracticeControl() {
         const handleStatsUpdate = (payload: any) => {
             if (!payload?.practice) return;
             setStats(prev => {
-                if (!prev) return null;
+                const base = prev || {
+                    totalPracticeUsers: 0,
+                    activePracticeUsers: 0,
+                    expiredPracticeUsers: 0,
+                    convertedToReal: 0,
+                    conversionRate: "0",
+                    maxPracticeUsers: 100000,
+                    practiceBonus: 100,
+                    practiceExpiryDays: 30,
+                    capacityUsed: "0",
+                    totalUsers: 0,
+                    newToday: 0,
+                    newYesterday: 0
+                };
                 return {
-                    ...prev,
+                    ...base,
                     totalPracticeUsers: payload.practice.total,
                     activePracticeUsers: payload.practice.active,
                     expiredPracticeUsers: payload.practice.total - payload.practice.active,
@@ -90,7 +104,7 @@ export function PracticeControl() {
                     newToday: payload.practice.newToday,
                     newYesterday: payload.practice.newYesterday,
                     conversionRate: payload.practice.total > 0 ? (payload.practice.converted / payload.practice.total * 100).toFixed(1) : "0",
-                    capacityUsed: (payload.practice.total / prev.maxPracticeUsers * 100).toFixed(1)
+                    capacityUsed: (payload.practice.total / base.maxPracticeUsers * 100).toFixed(1)
                 };
             });
             setLastSync(new Date());

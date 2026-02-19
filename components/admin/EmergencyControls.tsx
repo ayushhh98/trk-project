@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useSocket } from "@/components/providers/Web3Provider";
+import { getApiUrl } from "@/lib/api";
 
 interface EmergencyFlags {
     pauseRegistrations: boolean;
@@ -111,7 +112,7 @@ export function EmergencyControls() {
         setIsLoading(true);
         try {
             const token = localStorage.getItem("trk_token");
-            const res = await fetch("/api/admin/emergency/status", { headers: { Authorization: `Bearer ${token}` } });
+            const res = await fetch(`${getApiUrl()}/admin/emergency/status`, { headers: { Authorization: `Bearer ${token}` } });
             const data = await res.json();
             if (data.status === "success") {
                 setFlags(data.data.emergencyFlags);
@@ -161,7 +162,7 @@ export function EmergencyControls() {
         try {
             const token = localStorage.getItem("trk_token");
             const newValue = !flags[pendingAction.key];
-            const res = await fetch(`/api/admin/emergency/${pendingAction.apiAction}`, {
+            const res = await fetch(`${getApiUrl()}/admin/emergency/${pendingAction.apiAction}`, {
                 method: "POST",
                 headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                 body: JSON.stringify({ enabled: newValue })

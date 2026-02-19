@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const backendApiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/+$/, "");
+
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -13,7 +15,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:5000/api/:path*', // Proxy to Backend
+        destination: `${backendApiBase}/:path*`, // Proxy to Backend (env-aware for prod)
       },
     ]
   },

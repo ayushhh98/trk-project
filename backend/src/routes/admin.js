@@ -35,9 +35,9 @@ router.initializeService = (io) => {
 
             const practiceBaseQuery = { role: 'player', practiceBalance: { $gt: 0 } };
             const activePracticeQuery = { ...practiceBaseQuery, practiceExpiry: { $gt: now } };
-            const practiceTodayQuery = { ...practiceBaseQuery, createdAt: { $gte: todayStart } };
+            const practiceTodayQuery = { role: 'player', createdAt: { $gte: todayStart } };
             const practiceYesterdayQuery = {
-                ...practiceBaseQuery,
+                role: 'player',
                 createdAt: { $gte: yesterdayStart, $lt: todayStart }
             };
             const clubIncomeQuery = { role: 'player', 'realBalances.club': { $gt: 0 } };
