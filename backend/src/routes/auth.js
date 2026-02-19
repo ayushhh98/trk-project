@@ -12,6 +12,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { awardReferralSignupBonus } = require('../utils/referralBonus');
 // const { systemConfig } = require('../utils/globalConfig'); // Deprecated
 const system = require('../config/system');
+const { checkRegistrationPause } = require('../middleware/systemCheck');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -545,12 +546,8 @@ router.post('/logout-all', auth, async (req, res) => {
 });
 
 // Email Registration
-router.post('/register', async (req, res) => {
+router.post('/register', checkRegistrationPause, async (req, res) => {
     try {
-        if (system.get().emergencyFlags.pauseRegistrations) {
-            return res.status(503).json({ status: 'error', message: 'Registrations are currently paused due to system maintenance.' });
-        }
-
         const { email, password, referrerCode } = req.body;
 
         if (!email || !password) {

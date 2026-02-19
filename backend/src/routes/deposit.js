@@ -3,6 +3,7 @@ const User = require('../models/User');
 const auth = require('../middleware/auth');
 const PlatformStats = require('../models/PlatformStats');
 const system = require('../config/system');
+const { checkDepositPause, checkWithdrawalPause } = require('../middleware/systemCheck');
 
 const router = express.Router();
 const Notification = require('../models/Notification');
@@ -113,11 +114,9 @@ router.get('/status', auth, async (req, res) => {
 });
 
 // Make a deposit
-router.post('/deposit', auth, async (req, res) => {
+router.post('/deposit', auth, checkDepositPause, async (req, res) => {
     try {
-        if (system.get().emergencyFlags.pauseDeposits) {
-            return res.status(503).json({ status: 'error', message: 'Deposits are currently paused.' });
-        }
+        // middleware handles system check
 
         const { amount, txHash } = req.body;
 
@@ -355,11 +354,9 @@ const { withdrawalLimiter } = require('../middleware/rateLimiter');
 const { requireFreshAuth } = require('../middleware/freshAuth');
 
 // Withdraw funds (Protected: Requires fresh authentication + rate limiting)
-router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, async (req, res) => {
+router.post('/withdraw', auth, requireFreshAuth, withdrawalLimiter, checkWithdrawalPause, async (req, res) => {
     try {
-        if (system.get().emergencyFlags.pauseWithdrawals) {
-            return res.status(503).json({ status: 'error', message: 'Withdrawals are currently paused.' });
-        }
+        // middleware handles system check
 
         const { walletType, amount, toAddress } = req.body;
         const user = await User.findById(req.user.id);

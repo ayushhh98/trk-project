@@ -185,6 +185,7 @@ luckyDrawRoutes.initializeService(io);
 adminRoutes.initializeService(io);
 
 app.use('/api/admin', adminRoutes); // Admin routes (protected by RBAC)
+app.use('/api/admin/emergency', require('./routes/emergency')); // Emergency controls
 app.use('/api/audit', auditRoutes); // Audit log routes (admin only)
 
 // Health check

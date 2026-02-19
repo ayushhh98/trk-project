@@ -99,17 +99,14 @@ router.get('/recent-winners', async (req, res) => {
     }
 });
 
+const { checkLuckyDrawPause } = require('../middleware/systemCheck');
+
 /**
  * POST /lucky-draw/buy-ticket
  * Purchase jackpot tickets
  */
-router.post('/buy-ticket', auth, async (req, res) => {
+router.post('/buy-ticket', auth, checkLuckyDrawPause, async (req, res) => {
     try {
-        const { systemConfig } = require('../utils/globalConfig');
-        if (systemConfig.emergencyFlags.pauseLuckyDraw) {
-            return res.status(503).json({ status: 'error', message: 'Lucky Draw is currently paused.' });
-        }
-
         if (!jackpotService) {
             return res.status(503).json({
                 status: 'error',
